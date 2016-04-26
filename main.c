@@ -23,16 +23,19 @@ const unsigned int COL5 = 0x1f00000;
 const unsigned int MAX_COUNT = 0x2000000;
 
 const int MAX_NORMAL = 21;
+const int MAX_CAPSTONE = 1;
 
 #define MAX_STACK 7
 
 typedef enum move_type_s {PLACE_NORMAL, PLACE_STANDING, PLACE_CAPSTONE} move_type_s;
+typedef enum end_type_s {END_ONGOING, END_BLACK, END_WHITE, END_TIE} end_type_s;
 
 typedef struct board_s {
     unsigned int stones;
     unsigned int standing;
     unsigned int capstone;
-    int cap_played;
+    int num_normal;
+    int num_capstone;
     unsigned int stack[MAX_STACK];
 } board_s;
 
@@ -119,7 +122,11 @@ int connect_vertical(unsigned int x)
 
 int connect(unsigned int x)
 {
-    return connect(x) || connect(rotate(x));
+    return connect_vertical(x) || connect_vertical(rotate(x));
+}
+
+int evaluate_roads(board_s board) {
+    return connect(board.stones & ~board.standing);
 }
 
 int count_bits(unsigned int x)
@@ -153,7 +160,7 @@ move_s pick_stone_pos(state_s state)
     board_s board = !state.player_to_move ? state.black: state.white;
     int index;
 
-    switch (generate(3 - board.cap_played)) {
+    switch (generate(2 + (board.num_capstones > 0))) {
     case 0:
 	type = PLACE_NORMAL;
 	break;
@@ -177,6 +184,7 @@ move_s pick_move(state_s state)
 {
     move_s res;
 
+    /* TODO: Remember to handle if player has no stones */
     switch (generate(1)) {
     case 0:
 	res = pick_stone_pos(state);
@@ -192,15 +200,17 @@ board_s apply_move(board_s board, move_s move) {
     switch (move.type) {
     case PLACE_NORMAL:
 	board.stones |= 1 << move.stone_pos;
+	board.num_normal--;
 	break;
     case PLACE_STANDING:
 	board.stones |= 1 << move.stone_pos;
 	board.standing |= 1 << move.stone_pos;
+	board.num_normal--;
 	break;
     case PLACE_CAPSTONE:
 	board.stones |= 1 << move.stone_pos;
 	board.capstone |= 1 << move.stone_pos;
-	board.cap_played = 1;
+	board.num_capstones--;
 	break;
     }
 
@@ -218,6 +228,28 @@ int step_move(state_s state, move_s move) {
     new_board.player_to_move = !new_board.player_to_move;
 
     return new_state;
+}
+
+end_type_s game_ended(state_s state) {
+    /* Check for road win */
+    if (evaluate_roads(state.black))
+	return END_BLACK;
+    if (evaluate_roads(state.white))
+	return END_WHITE;
+
+    if (state.black.num_normal == 0 && state.white.num_normal == 0) {
+	int nblack = count_bits(state.black.stones);
+	int nwhite = count_bits(state.black.stones);
+
+	if (nblack == nwhite)
+	    return END_TIE;
+	if (nblack > nwhite)
+	    return END_BLACK;
+	else
+	    return END_WHITE;
+    }
+
+    return END_ONGOING;
 }
 
 int main(int argc, char *argv[])
