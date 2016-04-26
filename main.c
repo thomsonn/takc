@@ -22,35 +22,60 @@ const unsigned int COL5 = 0x1f00000;
 
 const unsigned int MAX_COUNT = 0x2000000;
 
-unsigned int flipv(unsigned int board)
+const int MAX_NORMAL = 21;
+
+#define MAX_STACK 7
+
+typedef enum move_type_s {PLACE_NORMAL, PLACE_STANDING, PLACE_CAPSTONE} move_type_s;
+
+typedef struct board_s {
+    unsigned int stones;
+    unsigned int standing;
+    unsigned int capstone;
+    int cap_played;
+    unsigned int stack[MAX_STACK];
+} board_s;
+
+typedef struct state_s {
+    board_s black;
+    board_s white;
+    int player_to_move;
+} state_s;
+
+typedef struct move_s {
+    move_type_s type;
+    unsigned int stone_pos;
+} move_s;
+
+unsigned int flipv(unsigned int x)
 {
-    return ((board >> 4) & ROW1) |
-	   ((board >> 2) & ROW2) |
-	    (board       & ROW3) |
-	   ((board << 2) & ROW4) |
-	   ((board << 4) & ROW5);
+    return ((x >> 4) & ROW1) |
+	   ((x >> 2) & ROW2) |
+	    (x       & ROW3) |
+	   ((x << 2) & ROW4) |
+	   ((x << 4) & ROW5);
 }
 
-unsigned int fliph(unsigned int board)
+unsigned int fliph(unsigned int x)
 {
-    return ((board >> 20) & COL1) |
-	   ((board >> 10) & COL2) |
-      	    (board        & COL3) |
-	   ((board << 10) & COL4) |
-	   ((board << 20) & COL5);
+    return ((x >> 20) & COL1) |
+	   ((x >> 10) & COL2) |
+      	    (x        & COL3) |
+	   ((x << 10) & COL4) |
+	   ((x << 20) & COL5);
 }
 
-unsigned int flipd(unsigned int board)
+unsigned int flipd(unsigned int x)
 {
-    return ((board >> 16) & 0x0000010) |
-	   ((board >> 12) & 0x0000208) |
-	   ((board >> 8)  & 0x0004104) |
-           ((board >> 4)  & 0x0082082) |
-	    (board        & 0x1041041) |
-	   ((board << 4)  & 0x0820820) |
-	   ((board << 8)  & 0x0410400) |
-	   ((board << 12) & 0x0208000) |
-      	   ((board << 16) & 0x0100000);
+    return ((x >> 16) & 0x0000010) |
+	   ((x >> 12) & 0x0000208) |
+	   ((x >> 8)  & 0x0004104) |
+           ((x >> 4)  & 0x0082082) |
+	    (x        & 0x1041041) |
+	   ((x << 4)  & 0x0820820) |
+	   ((x << 8)  & 0x0410400) |
+	   ((x << 12) & 0x0208000) |
+      	   ((x << 16) & 0x0100000);
 }
 
 unsigned int rotate(unsigned int board)
@@ -58,38 +83,141 @@ unsigned int rotate(unsigned int board)
     return fliph(flipd(board));
 }
 
-int connect(unsigned int board)
+int connect_vertical(unsigned int x)
 {
-    unsigned int bd, bu, f24, f3;
+    unsigned int prop12, prop45, fill24, fill33;
     
-    bd = (board << 1) & ROW2;
-    bu = (board >> 1) & ROW4;
+    prop12 = (x << 1) & ROW2;
+    prop45 = (x >> 1) & ROW4;
 
-    f24 = board & (bd | bu);
+    fill24 = x & (prop12 | prop45);
 
-    f24 |= board & (f24 << size);
-    f24 |= board & (f24 << size);
-    f24 |= board & (f24 << size);
-    f24 |= board & (f24 << size);
+    fill24 |= x & (fill24 << size);
+    fill24 |= x & (fill24 << size);
+    fill24 |= x & (fill24 << size);
+    fill24 |= x & (fill24 << size);
 
-    f24 |= board & (f24 >> size);
-    f24 |= board & (f24 >> size);
-    f24 |= board & (f24 >> size);
-    f24 |= board & (f24 >> size);
+    fill24 |= x & (fill24 >> size);
+    fill24 |= x & (fill24 >> size);
+    fill24 |= x & (fill24 >> size);
+    fill24 |= x & (fill24 >> size);
 
-    f3 = board & (f24 << 1) & ROW3;
+    fill33 = x & (fill24 << 1) & ROW3;
 
-    f3 |= board & (f3 >> size);
-    f3 |= board & (f3 >> size);
-    f3 |= board & (f3 >> size);
-    f3 |= board & (f3 >> size);
+    fill33 |= x & (fill33 >> size);
+    fill33 |= x & (fill33 >> size);
+    fill33 |= x & (fill33 >> size);
+    fill33 |= x & (fill33 >> size);
 
-    f3 |= board & (f3 << size);
-    f3 |= board & (f3 << size);
-    f3 |= board & (f3 << size);
-    f3 |= board & (f3 << size);
+    fill33 |= x & (fill33 << size);
+    fill33 |= x & (fill33 << size);
+    fill33 |= x & (fill33 << size);
+    fill33 |= x & (fill33 << size);
 
-    return f3 & (f24 >> 1) & ROW3;
+    return (fill33 & (fill24 >> 1) & ROW3) != 0;
+}
+
+int connect(unsigned int x)
+{
+    return connect(x) || connect(rotate(x));
+}
+
+int count_bits(unsigned int x)
+{
+    const unsigned int magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
+    unsigned int y;
+
+    y = x - (x >> 1 & magic[0]);
+    y = ((y >> 2) & magic[1]) + (y & magic[1]);
+    y = (y >>  4) + y & magic[2];
+    y = (y >>  8) + y & magic[3];
+    y = (y >> 16) + y & magic[4];
+
+    return y;
+}
+
+int count_unoccupied(state_s board)
+{
+    return count_bits(~(board.black.stones | board.white.stones));
+}
+
+int generate(int n)
+{
+    /* FIXME: Dumb random numbers */
+    return rand()/(RAND_MAX/n + 1);
+}
+
+move_s pick_stone_pos(state_s state)
+{
+    move_type_s type;
+    board_s board = !state.player_to_move ? state.black: state.white;
+    int index;
+
+    switch (generate(3 - board.cap_played)) {
+    case 0:
+	type = PLACE_NORMAL;
+	break;
+    case 1:
+	type = PLACE_STANDING;
+	break;
+    case 2:
+	type = PLACE_CAPSTONE;
+	break;
+    }
+
+    do {
+	index = generate(25);
+    }
+    while ((1 << index) & (state.black.stones | state.white.stones));
+
+    return (move_s) {.type = type, .stone_pos = index};
+}
+
+move_s pick_move(state_s state)
+{
+    move_s res;
+
+    switch (generate(1)) {
+    case 0:
+	res = pick_stone_pos(state);
+	break;
+    }
+
+    return res;
+}
+
+board_s apply_move(board_s board, move_s move) {
+    board_s new_board = board;
+    
+    switch (move.type) {
+    case PLACE_NORMAL:
+	board.stones |= 1 << move.stone_pos;
+	break;
+    case PLACE_STANDING:
+	board.stones |= 1 << move.stone_pos;
+	board.standing |= 1 << move.stone_pos;
+	break;
+    case PLACE_CAPSTONE:
+	board.stones |= 1 << move.stone_pos;
+	board.capstone |= 1 << move.stone_pos;
+	board.cap_played = 1;
+	break;
+    }
+
+    return new_board;
+}
+
+int step_move(state_s state, move_s move) {
+    state_s new_state = state;
+
+    if (!state.player_to_move)
+	new_state.black = apply_move(state.black, move);
+    else
+	new_state.white = apply_move(state.white, move);
+    
+    new_board.player_to_move = !new_board.player_to_move;
+
+    return new_state;
 }
 
 int main(int argc, char *argv[])
@@ -103,7 +231,7 @@ int main(int argc, char *argv[])
     winning = malloc(MAX_COUNT*sizeof(unsigned int));
 
     for (i = 0; i < MAX_COUNT; i++)
-	if (connect(i) != 0 || connect(rotate(i)) != 0)
+	if (connect(i) || connect(rotate(i)))
 	    winning[total++] = i;
 
     printf("found: %d\n", total);
