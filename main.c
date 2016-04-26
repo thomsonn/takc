@@ -3,7 +3,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const int size = 5;
+#define MAX_STACK 7
+
+const int SIZE = 5;
+
+const int MAX_NORMAL = 21;
+const int MAX_CAPSTONES = 1;
 
 const unsigned int DMASK = 0x1ef7bde;
 const unsigned int UMASK = 0x0f7bdef;
@@ -22,26 +27,35 @@ const unsigned int COL5 = 0x1f00000;
 
 const unsigned int MAX_COUNT = 0x2000000;
 
-const int MAX_NORMAL = 21;
-const int MAX_CAPSTONE = 1;
+typedef enum move_type_s {
+    PLACE_NORMAL,
+    PLACE_STANDING,
+    PLACE_CAPSTONE
+} move_type_s;
 
-#define MAX_STACK 7
+typedef enum end_type_s {
+    END_ONGOING,
+    END_BLACK,
+    END_WHITE,
+    END_TIE
+} end_type_s;
 
-typedef enum move_type_s {PLACE_NORMAL, PLACE_STANDING, PLACE_CAPSTONE} move_type_s;
-typedef enum end_type_s {END_ONGOING, END_BLACK, END_WHITE, END_TIE} end_type_s;
+typedef enum player_s {
+    PLAYER_BLACK,
+    PLAYER_WHITE,
+} player_s;
 
 typedef struct board_s {
     unsigned int stones;
     unsigned int standing;
     unsigned int capstone;
     int num_normal;
-    int num_capstone;
+    int num_capstones;
     unsigned int stack[MAX_STACK];
 } board_s;
 
 typedef struct state_s {
-    board_s black;
-    board_s white;
+    board_s boards[2];
     int player_to_move;
 } state_s;
 
@@ -95,27 +109,27 @@ int connect_vertical(unsigned int x)
 
     fill24 = x & (prop12 | prop45);
 
-    fill24 |= x & (fill24 << size);
-    fill24 |= x & (fill24 << size);
-    fill24 |= x & (fill24 << size);
-    fill24 |= x & (fill24 << size);
+    fill24 |= x & (fill24 << SIZE);
+    fill24 |= x & (fill24 << SIZE);
+    fill24 |= x & (fill24 << SIZE);
+    fill24 |= x & (fill24 << SIZE);
 
-    fill24 |= x & (fill24 >> size);
-    fill24 |= x & (fill24 >> size);
-    fill24 |= x & (fill24 >> size);
-    fill24 |= x & (fill24 >> size);
+    fill24 |= x & (fill24 >> SIZE);
+    fill24 |= x & (fill24 >> SIZE);
+    fill24 |= x & (fill24 >> SIZE);
+    fill24 |= x & (fill24 >> SIZE);
 
     fill33 = x & (fill24 << 1) & ROW3;
 
-    fill33 |= x & (fill33 >> size);
-    fill33 |= x & (fill33 >> size);
-    fill33 |= x & (fill33 >> size);
-    fill33 |= x & (fill33 >> size);
+    fill33 |= x & (fill33 >> SIZE);
+    fill33 |= x & (fill33 >> SIZE);
+    fill33 |= x & (fill33 >> SIZE);
+    fill33 |= x & (fill33 >> SIZE);
 
-    fill33 |= x & (fill33 << size);
-    fill33 |= x & (fill33 << size);
-    fill33 |= x & (fill33 << size);
-    fill33 |= x & (fill33 << size);
+    fill33 |= x & (fill33 << SIZE);
+    fill33 |= x & (fill33 << SIZE);
+    fill33 |= x & (fill33 << SIZE);
+    fill33 |= x & (fill33 << SIZE);
 
     return (fill33 & (fill24 >> 1) & ROW3) != 0;
 }
@@ -143,9 +157,9 @@ int count_bits(unsigned int x)
     return y;
 }
 
-int count_unoccupied(state_s board)
+int count_unoccupied(state_s state)
 {
-    return count_bits(~(board.black.stones | board.white.stones));
+    return count_bits(~(state.boards[PLAYER_BLACK].stones | state.boards[PLAYER_WHITE].stones));
 }
 
 int generate(int n)
@@ -157,10 +171,9 @@ int generate(int n)
 move_s pick_stone_pos(state_s state)
 {
     move_type_s type;
-    board_s board = !state.player_to_move ? state.black: state.white;
     int index;
 
-    switch (generate(2 + (board.num_capstones > 0))) {
+    switch (generate(2 + (state.boards[state.player_to_move].num_capstones > 0))) {
     case 0:
 	type = PLACE_NORMAL;
 	break;
@@ -175,7 +188,7 @@ move_s pick_stone_pos(state_s state)
     do {
 	index = generate(25);
     }
-    while ((1 << index) & (state.black.stones | state.white.stones));
+    while ((1 << index) & (state.boards[PLAYER_BLACK].stones | state.boards[PLAYER_WHITE].stones));
 
     return (move_s) {.type = type, .stone_pos = index};
 }
@@ -217,29 +230,26 @@ board_s apply_move(board_s board, move_s move) {
     return new_board;
 }
 
-int step_move(state_s state, move_s move) {
+state_s step_move(state_s state, move_s move) {
     state_s new_state = state;
 
-    if (!state.player_to_move)
-	new_state.black = apply_move(state.black, move);
-    else
-	new_state.white = apply_move(state.white, move);
-    
-    new_board.player_to_move = !new_board.player_to_move;
+    new_state.boards[state.player_to_move] = apply_move(state.boards[state.player_to_move], move);
+    new_state.player_to_move = !new_state.player_to_move;
 
     return new_state;
 }
 
 end_type_s game_ended(state_s state) {
     /* Check for road win */
-    if (evaluate_roads(state.black))
+    if (evaluate_roads(state.boards[0]))
 	return END_BLACK;
-    if (evaluate_roads(state.white))
+    if (evaluate_roads(state.boards[1]))
 	return END_WHITE;
 
-    if (state.black.num_normal == 0 && state.white.num_normal == 0) {
-	int nblack = count_bits(state.black.stones);
-	int nwhite = count_bits(state.black.stones);
+    /* Check for flat win */
+    if (state.boards[0].num_normal == 0 && state.boards[1].num_normal == 0) {
+	int nblack = count_bits(state.boards[0].stones & ~state.boards[0].standing);
+	int nwhite = count_bits(state.boards[1].stones & ~state.boards[1].standing);
 
 	if (nblack == nwhite)
 	    return END_TIE;
@@ -254,49 +264,21 @@ end_type_s game_ended(state_s state) {
 
 int main(int argc, char *argv[])
 {
-    unsigned int *winning;
-    int i, j;
-    int total = 0;
-    int cur;
-    int removed = 0;
+    /* TODO: Implement stacks */
+    board_s start = {
+	.stones = 0,
+	.standing = 0,
+	.capstone = 0,
+	.num_normal = MAX_NORMAL,
+	.num_capstones = MAX_CAPSTONES
+    };
+    state_s game_state = {
+	.boards[0] = start,
+	.boards[1] = start,
+	.player_to_move = 0
+    };
 
-    winning = malloc(MAX_COUNT*sizeof(unsigned int));
-
-    for (i = 0; i < MAX_COUNT; i++)
-	if (connect(i) || connect(rotate(i)))
-	    winning[total++] = i;
-
-    printf("found: %d\n", total);
-
-    for (cur = 0; cur < total; cur++) {
-	int match = 0;
-	for (j = 0; j < total; j++) {
-	    match += (winning[cur] | winning[j]) == winning[cur];
-	    if (match > 1) {
-		// Mark for deletion
-		winning[cur] = 0xdeadbeef;
-		removed++;
-		goto skip;
-	    }
-	}
-	if (match == 1)
-	    printf("%d\n", winning[cur]);
-
-    skip:
-	if (removed > 1e4) {
-	    int next = 0;
-	    for (i = 0; i < total; i++)
-		if (winning[i] != 0xdeadbeef)
-		    winning[next++] = winning[i];
-
-	    assert(total == next + removed);
-	    total = next;
-	    cur -= removed;
-	    removed = 0;
-	}
-    }
-    
-    free(winning);
+    /* TODO: Be careful of the first round */
 
     return 0;
 }
