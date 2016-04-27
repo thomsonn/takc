@@ -55,7 +55,7 @@ typedef struct board_s {
 } board_s;
 
 typedef struct state_s {
-    board_s boards[2];
+    board_s *boards;
     int player_to_move;
 } state_s;
 
@@ -98,6 +98,26 @@ unsigned int flipd(unsigned int x)
 unsigned int rotate(unsigned int board)
 {
     return fliph(flipd(board));
+}
+
+int count_bits(unsigned int x)
+{
+    const unsigned int magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
+    unsigned int y;
+
+    y = x - (x >> 1 & magic[0]);
+    y = ((y >> 2) & magic[1]) + (y & magic[1]);
+    y = (y >>  4) + y & magic[2];
+    y = (y >>  8) + y & magic[3];
+    y = (y >> 16) + y & magic[4];
+
+    return y;
+}
+
+int generate(int n)
+{
+    /* FIXME: Dumb random numbers */
+    return rand()/(RAND_MAX/n + 1);
 }
 
 int connect_vertical(unsigned int x)
@@ -143,29 +163,10 @@ int evaluate_roads(board_s board) {
     return connect(board.stones & ~board.standing);
 }
 
-int count_bits(unsigned int x)
-{
-    const unsigned int magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
-    unsigned int y;
-
-    y = x - (x >> 1 & magic[0]);
-    y = ((y >> 2) & magic[1]) + (y & magic[1]);
-    y = (y >>  4) + y & magic[2];
-    y = (y >>  8) + y & magic[3];
-    y = (y >> 16) + y & magic[4];
-
-    return y;
-}
-
 int count_unoccupied(state_s state)
 {
-    return count_bits(~(state.boards[PLAYER_BLACK].stones | state.boards[PLAYER_WHITE].stones));
-}
-
-int generate(int n)
-{
-    /* FIXME: Dumb random numbers */
-    return rand()/(RAND_MAX/n + 1);
+    return count_bits(~(state.boards[PLAYER_BLACK].stones |
+			state.boards[PLAYER_WHITE].stones));
 }
 
 move_s pick_stone_pos(state_s state)
@@ -188,7 +189,8 @@ move_s pick_stone_pos(state_s state)
     do {
 	index = generate(25);
     }
-    while ((1 << index) & (state.boards[PLAYER_BLACK].stones | state.boards[PLAYER_WHITE].stones));
+    while ((1 << index) & (state.boards[PLAYER_BLACK].stones |
+			   state.boards[PLAYER_WHITE].stones));
 
     return (move_s) {.type = type, .stone_pos = index};
 }
@@ -198,6 +200,7 @@ move_s pick_move(state_s state)
     move_s res;
 
     /* TODO: Remember to handle if player has no stones */
+    /* TODO: Handle forced place by rules on first round */
     switch (generate(1)) {
     case 0:
 	res = pick_stone_pos(state);
@@ -241,15 +244,16 @@ state_s step_move(state_s state, move_s move) {
 
 end_type_s game_ended(state_s state) {
     /* Check for road win */
-    if (evaluate_roads(state.boards[0]))
+    if (evaluate_roads(state.boards[PLAYER_BLACK]))
 	return END_BLACK;
-    if (evaluate_roads(state.boards[1]))
+    if (evaluate_roads(state.boards[PLAYER_WHITE]))
 	return END_WHITE;
 
     /* Check for flat win */
-    if (state.boards[0].num_normal == 0 && state.boards[1].num_normal == 0) {
-	int nblack = count_bits(state.boards[0].stones & ~state.boards[0].standing);
-	int nwhite = count_bits(state.boards[1].stones & ~state.boards[1].standing);
+    if (state.boards[PLAYER_BLACK].num_normal == 0 &&
+	state.boards[PLAYER_WHITE].num_normal == 0) {
+	int nblack = count_bits(state.boards[PLAYER_BLACK].stones & ~state.boards[PLAYER_BLACK].standing);
+	int nwhite = count_bits(state.boards[PLAYER_WHITE].stones & ~state.boards[PLAYER_WHITE].standing);
 
 	if (nblack == nwhite)
 	    return END_TIE;
@@ -273,9 +277,8 @@ int main(int argc, char *argv[])
 	.num_capstones = MAX_CAPSTONES
     };
     state_s game_state = {
-	.boards[0] = start,
-	.boards[1] = start,
-	.player_to_move = 0
+	.boards = (board_s[2]) {start, start},
+	.player_to_move = PLAYER_BLACK
     };
 
     /* TODO: Be careful of the first round */
