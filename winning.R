@@ -1,11 +1,6 @@
 library(pracma)
 library(stringi)
 
-board <- function(i, n) {
-    x <- strsplit(stri_pad_left(bits(i), n^2, "0"), "")[[1]]
-    matrix(as.numeric(x), n, n)
-}
-
 fliph <- function(x) {
     t(apply(x, 1, rev))
 }
@@ -27,6 +22,11 @@ rot270 <- function(x) {
 }
 
 funs <- list(identity, rot90, rot180, rot270, t, fliph, function(x) t(rot180(x)), flipv)
+
+board <- function(i, n = 5) {
+    x <- strsplit(stri_pad_left(bits(i), n^2, "0"), "")[[1]]
+    rot180(matrix(as.numeric(x), n, n))
+}
 
 isuniq <- function(x) {
     lapply(funs[-1], do.call, list(x))

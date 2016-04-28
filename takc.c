@@ -29,8 +29,8 @@ const uint32_t COL4 = 0x00f8000;
 const uint32_t COL5 = 0x1f00000;
 
 typedef enum colour {
-    BLACK,
-    WHITE
+    BLACK = 0,
+    WHITE = 1
 } colour;
 
 /* The bitboard representation for stones is as follows:
@@ -58,13 +58,13 @@ typedef struct board_s {
 } board_s;
 
 typedef struct state_s {
-    board_s *boards;
+    board_s black, white;
     int player_to_move;
-    board_s *player_board;
-    board_s *opponent_board;
+    int starting;
 } state_s;
 
 typedef struct move_s {
+    int index;
     uint32_t stones;
     uint32_t standing;
     uint32_t capstone;
@@ -75,6 +75,9 @@ typedef struct move_s {
 
 typedef struct node_s {
     move_s move;
+    int num_win;
+    int num_loss;
+    int num_draw;
 } node_s;
 
 unsigned int flip_vert(unsigned int x)
@@ -133,6 +136,12 @@ int generate(int n)
     return rand()/(RAND_MAX/n + 1);
 }
 
+float generatef(float x)
+{
+    /* FIXME: Dumb random numbers */
+    return ((float) rand())/((float) (RAND_MAX/x));
+}
+
 int connect_vert(uint32_t x)
 {
     uint32_t v12, v54, h24, h33;
@@ -173,24 +182,35 @@ int connect(uint32_t x)
 }
 
 int evaluate_roads(board_s board) {
-    return connect(board.stones & ~board.standing);
+    return connect(board.stones ^ board.standing);
 }
 
 int count_unoccupied(state_s state)
 {
-    return count_bits(~(state.boards[BLACK].stones |
-			state.boards[WHITE].stones));
+    return count_bits(~(state.black.stones |
+			state.white.stones));
+}
+
+board_s player_board(state_s state)
+{
+    return state.player_to_move ? state.white : state.black;
+}
+
+board_s opponent_board(state_s state)
+{
+    return state.player_to_move ? state.black : state.white;
 }
 
 move_s place_stone(state_s state, int index)
 {
     /* TODO: Use a policy */
-    switch (generate(2 + (state.player_board->num_capstones > 0))) {
+    switch (generate(2 + (player_board(state).num_capstones > 0))) {
     case 0:
 	return (move_s) {.stones = 1 << index, .less_normal = 1, .type = 'n'};
     case 1:
 	return (move_s) {.stones = 1 << index, .standing = 1 << index, .less_normal = 1, .type = 's'};
     case 2:
+	assert(player_board(state).num_capstones > 0);
 	return (move_s) {.stones = 1 << index, .capstone = 1 << index, .less_capstones = 1, .type = 'c'};
     }
 
@@ -206,10 +226,20 @@ move_s move_stone(state_s state, int index)
     move_s res;
 
     /* Return failure if there are no legal moves */
-    legal = nmask << index;
-    legal &= (~(state.boards[BLACK].standing |
-		state.boards[WHITE].standing) & BOARD) << 5;
-    legal = legal >> 5;
+    legal = index >= 5 ? nmask << (index - 5) : nmask >> (5 - index);
+    if (1 << index & ~UMASK)
+	legal &= DMASK;
+    if (1 << index & ~DMASK)
+	legal &= UMASK;
+    legal &= ~(state.black.stones |
+	       state.white.stones) & BOARD;
+    /*
+    legal &= ~(state.black.capstone |
+	       state.white.capstone) & BOARD;
+      if (!(player_board(state).capstone & 1 << index))
+      legal &= ~(state.black.standing |
+      state.white.standing) & BOARD;
+    */
     if (!legal)
 	return (move_s) {.type = 'F'};
     
@@ -219,9 +249,9 @@ move_s move_stone(state_s state, int index)
 
     res = (move_s) {.stones = 1 << index | 1 << dest, .type = 'm'};
 
-    if (state.player_board->standing & 1 << dest)
+    if (player_board(state).standing & 1 << index)
 	res.standing = res.stones;
-    if (state.player_board->capstone & 1 << dest)
+    if (player_board(state).capstone & 1 << index)
 	res.capstone = res.stones;
     
     return res;
@@ -232,19 +262,28 @@ move_s pick_move(state_s state)
     move_s res;
     int index;
 
-    /* TODO: Remember to handle if player has no stones */
-    /* TODO: Handle forced place by rules on first round */
     do {
 	index = generate(SIZE*SIZE);
 
-	if (1 << index & state.player_board->stones)
-	    res = move_stone(state, index);
-	else if (1 << index & ~(state.boards[BLACK].stones | state.boards[WHITE].stones))
-	    res = place_stone(state, index);
-	else
-	    continue;
+	if (state.starting) {
+	    if (1 << index & (~(state.black.stones | state.white.stones) & BOARD))
+		res = (move_s) {.stones = 1 << index, .less_normal = 1, .type = 'n'};
+	    else
+		res = (move_s) {.type = 'F'};
+	}
+	else {
+	    if (1 << index & player_board(state).stones)
+		res = move_stone(state, index);
+	    else if (1 << index & (~(state.black.stones | state.white.stones) & BOARD) &&
+		     player_board(state).num_normal > 0)
+		res = place_stone(state, index);
+	    else
+		res = (move_s) {.type = 'F'};
+	}
     }
     while (res.type == 'F');
+
+    res.index = index;
 
     return res;
 }
@@ -252,6 +291,11 @@ move_s pick_move(state_s state)
 board_s apply_move(board_s board, move_s move)
 {
     board_s new_board = board;
+
+    assert(move.type == 'n' || move.type == 's' || move.less_normal == 0);
+    assert(move.type == 'c' || move.less_capstones == 0);
+
+    assert(move.type != 'c' || board.num_capstones > 0);
 
     new_board.stones ^= move.stones;
     new_board.standing ^= move.standing;
@@ -266,10 +310,30 @@ state_s step_move(state_s state, move_s move)
 {
     state_s new_state = state;
 
-    *new_state.player_board = apply_move(*state.player_board, move);
+    if (state.starting) {
+	/* FIXME: I don't really understand this */
+	if (state.player_to_move == WHITE) {
+	    new_state.white = apply_move(state.white, move);
+	    new_state.player_to_move = BLACK;
+	}
+	else {
+	    new_state.black = apply_move(state.black, move);
+	    new_state.starting = 0;
+	}
+
+	return new_state;
+    }
+    
+    if (state.player_to_move == BLACK)
+	new_state.black = apply_move(state.black, move);
+    else
+	new_state.white = apply_move(state.white, move);
     new_state.player_to_move = !new_state.player_to_move;
-    new_state.player_board = &new_state.boards[state.player_to_move];
-    new_state.opponent_board = &new_state.boards[!state.player_to_move];
+
+    assert(new_state.black.num_normal >= 0);
+    assert(new_state.black.num_capstones >= 0);
+    assert(new_state.white.num_normal >= 0);
+    assert(new_state.white.num_capstones >= 0);
 
     return new_state;
 }
@@ -277,16 +341,16 @@ state_s step_move(state_s state, move_s move)
 char game_ended(state_s state)
 {
     /* Check for road win */
-    if (evaluate_roads(state.boards[BLACK]))
+    if (evaluate_roads(state.black))
 	return '-';
-    if (evaluate_roads(state.boards[WHITE]))
+    if (evaluate_roads(state.white))
 	return '+';
 
     /* Check for flat win */
-    if (state.boards[BLACK].num_normal == 0 &&
-	state.boards[WHITE].num_normal == 0) {
-	int nblack = count_bits(state.boards[BLACK].stones & ~state.boards[BLACK].standing);
-	int nwhite = count_bits(state.boards[WHITE].stones & ~state.boards[WHITE].standing);
+    if ((state.black.stones | state.white.stones) == BOARD ||
+	(state.black.num_normal == 0 && state.white.num_normal == 0)) {
+	int nblack = count_bits(state.black.stones & ~state.black.standing);
+	int nwhite = count_bits(state.white.stones & ~state.white.standing);
 
 	if (nblack == nwhite)
 	    return '=';
@@ -299,61 +363,227 @@ char game_ended(state_s state)
     return 0;
 }
 
-int rollout(state_s state)
+char rollout(state_s state)
 {
     char res;
     
-    do {
+    while (!(res = game_ended(state))) {
 	move_s move;
 
 	move = pick_move(state);
 	state = step_move(state, move);
     }
-    while ((res = !game_ended(state)));
 
     return res;
 }
 
-int evaluate(state_s state)
+void step_evaluation(GNode *root, state_s state)
 {
-    return 0;
+    GNode *node = root;
+    GNode *child;
+    node_s *data;
+    GArray *eval_array;
+    char result;
+    int add_win, add_loss, add_draw;
+    state_s new_state = state;
+
+    eval_array = g_array_new(FALSE, FALSE, sizeof(float));
+
+    /* Find a leaf */
+    while (!G_NODE_IS_LEAF(node)) {
+	int ichild = 0;
+	int nchildren;
+	float total = 0;
+	float dice;
+
+	nchildren = g_node_n_children(root);
+
+	for (int i = 0; i < nchildren; i++) {
+	    node_s *data;
+	    float eval;
+	
+	    data = (node_s *) g_node_nth_child(node, i)->data;
+
+	    eval = ((float) data->num_win)/((float) (data->num_win + data->num_loss + data->num_draw));
+	    g_array_append_val(eval_array, eval);
+	    total += eval;
+	}
+
+	dice = generatef(total);
+
+	do
+	    dice -= g_array_index(eval_array, float, ichild);
+	while (dice > 0);
+
+	node = g_node_nth_child(node, ichild);
+	data = (node_s *) node->data;
+	new_state = step_move(new_state, data->move);
+    }
+
+    g_array_free(eval_array, TRUE);
+
+    if (!game_ended(new_state)) {
+	/* Add a new child */
+	data = calloc(1, sizeof(node_s));
+	data->move = pick_move(new_state);
+	new_state = step_move(new_state, data->move);
+
+	child = g_node_new(data);
+	node = g_node_insert(node, 0, child);
+    }
+
+    /* Rollout the position */
+    result = rollout(new_state);
+    add_win = (result == '+') == new_state.player_to_move;
+    add_loss = (result == '-') == new_state.player_to_move;
+    add_draw = result == '=';
+
+    /* Propagate back up the tree */
+    while (!G_NODE_IS_ROOT(node)) {
+	data = (node_s *) node->data;
+	data->num_win += add_win;
+	data->num_loss += add_loss;
+	data->num_draw += add_draw;
+	node = node->parent;
+    }
+}
+
+GNode *evaluate(GNode *root, state_s state)
+{
+    GNode *node;
+    GNode *res = NULL;
+    float best_eval = 0;
+
+    for (int i = 0; i < 100000; i++)
+	step_evaluation(root, state);
+
+    for (unsigned int i = 0; i < g_node_n_children(root); i++) {
+	node_s *data;
+	float eval;
+
+	node = g_node_nth_child(root, i);
+	data = (node_s *) node->data;
+	
+	/* If there are no winning moves, play out to the end anyway */
+	if (i == 0)
+	    res = node;
+
+	eval = ((float) data->num_win)/((float) (data->num_win + data->num_loss + data->num_draw));
+	if (eval > best_eval) {
+	    res = node;
+	    best_eval = eval;
+	}
+    }
+
+    return res;
+}
+
+GNode *make_move(GNode *root, state_s state)
+{
+    GNode *best;
+    
+    best = evaluate(root, state);
+    g_node_unlink(best);
+
+    free(root->data);
+    g_node_destroy(root);
+
+    return best;
+}
+
+char *print_move(move_s move)
+{
+    const char direction[] = {'<', '!', '!', '!', '+', '!', '-', '!', '!', '!', '>'};
+    char *string = "";
+    int row, col;
+
+    col = move.index/5;
+    row = 4 - move.index % 5;
+
+    if (move.type == 'c')
+	asprintf(&string, "C");
+    if (move.type == 's')
+	asprintf(&string, "S");
+
+    asprintf(&string, "%s%c", string, 'a' + col);
+    asprintf(&string, "%s%c", string, '1' + row);
+
+    if (move.type == 'm') {
+	int board;
+	int n;
+
+	board = move.stones ^ 1 << move.index;
+	assert(board != 0);
+	n = log2l(move.index >= 5 ? board >> (move.index - 5) : board << (5 - move.index));
+	assert(n >= 0 && n < 11);
+	asprintf(&string, "%s%c", string, direction[n]);
+    }
+
+    return string;
 }
 
 int main()
 {
     GNode *search_tree;
-    board_s start = {
+    board_s empty = {
 	.num_normal = MAX_NORMAL,
 	.num_capstones = MAX_CAPSTONES
     };
     state_s game_state = {
-	.boards = (board_s[2]) {start, start},
-	.player_to_move = BLACK
+	.black = empty,
+	.white = empty,
+	.player_to_move = WHITE,
+	.starting = 1
     };
+    node_s *data;
+    int ply = 0;
 
     /* Seed the random number generator */
     srand(4894);
-    
-    game_state.player_board = &game_state.boards[game_state.player_to_move];
-    game_state.player_board = &game_state.boards[!game_state.player_to_move];
 
     /* Create the root of the search tree */
-    search_tree = g_node_new(NULL);
+    data = calloc(1, sizeof(node_s));
+    search_tree = g_node_new(data);
+
+    printf("[Size \"5\"]\n\n");
 
     /* TODO: Be careful of the first round */
     do {
-	move_s move;
+	char *string;
+	
+	search_tree = make_move(search_tree, game_state);
+	data = (node_s *) search_tree->data;
+	game_state = step_move(game_state, data->move);
 
-	move = pick_move(game_state);
-	game_state = step_move(game_state, move);
+	string = print_move(data->move);
 
-	printf("B: %d\nW: %d\n\n",
-	       game_state.boards[BLACK].stones,
-	       game_state.boards[WHITE].stones);
+	if (ply % 2 == 0)
+	    asprintf(&string, "%d. %s", ply/2 + 1, string);
+	else
+	    asprintf(&string, " %s\n", string);
+
+	printf("%s", string);
+	free(string);
+
+	/*
+	printf("B: %u\nW: %u\n\n",
+	       game_state.black.stones,
+	       game_state.white.stones);
+	*/
+
+	fflush(stdout);
+
+	ply++;
     }
     while (!game_ended(game_state));
 
-    g_node_destroy(search_tree);
+    printf("\nB: %u\nW: %u\n\n",
+	   game_state.black.stones,
+	   game_state.white.stones);
+
+    printf("\nBr: %u\nWr: %u\n\n",
+	   game_state.black.stones ^ game_state.black.standing,
+	   game_state.white.stones ^ game_state.white.standing);
 
     return 0;
 }

@@ -1,8 +1,11 @@
-CFLAGS = `pkg-config --cflags glib-2.0` -ggdb -Wall -Wextra -O1
-LDLIBS = `pkg-config --libs glib-2.0`
+CFLAGS = `pkg-config --cflags glib-2.0`
+CFLAGS += -ggdb -Wall -Wextra
+CFLAGS += -Ofast -fomit-frame-pointer -march=native
+#CFLAGS += -O0 -fno-omit-frame-pointer
+LDLIBS = `pkg-config --libs glib-2.0` -lm
 objects = takc.o
 
 takc: $(objects)
 
 clean:
-	rm -f takc
+	rm -f takc $(objects)
