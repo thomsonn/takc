@@ -1,5 +1,5 @@
 CFLAGS = `pkg-config --cflags glib-2.0` -ggdb -Wall -Wextra -O1
-LDADD = `pkg-config --libs glib-2.0`
+LDLIBS = `pkg-config --libs glib-2.0`
 objects = takc.o
 
 takc: $(objects)

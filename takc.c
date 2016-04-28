@@ -65,9 +65,17 @@ typedef struct state_s {
 } state_s;
 
 typedef struct move_s {
-    uint32_t from, to;
+    uint32_t stones;
+    uint32_t standing;
+    uint32_t capstone;
+    int less_normal;
+    int less_capstones;
     char type;
 } move_s;
+
+typedef struct node_s {
+    move_s move;
+} node_s;
 
 unsigned int flip_vert(unsigned int x)
 {
@@ -176,25 +184,17 @@ int count_unoccupied(state_s state)
 
 move_s place_stone(state_s state, int index)
 {
-    char type;
-
     /* TODO: Use a policy */
     switch (generate(2 + (state.player_board->num_capstones > 0))) {
     case 0:
-	type = 'n';
-	break;
+	return (move_s) {.stones = 1 << index, .less_normal = 1, .type = 'n'};
     case 1:
-	type = 's';
-	break;
+	return (move_s) {.stones = 1 << index, .standing = 1 << index, .less_normal = 1, .type = 's'};
     case 2:
-	type = 'c';
-	break;
-    default:
-	type = 'F';
-	break;
+	return (move_s) {.stones = 1 << index, .capstone = 1 << index, .less_capstones = 1, .type = 'c'};
     }
 
-    return (move_s) {.to = 1 << index, .type = type};
+    return (move_s) {.type = 'F'};
 }
 
 move_s move_stone(state_s state, int index)
@@ -203,18 +203,28 @@ move_s move_stone(state_s state, int index)
     const uint32_t nmask = 0x451;
     uint32_t legal;
     int dest;
+    move_s res;
 
     /* Return failure if there are no legal moves */
-    legal = (nmask << index & (~(state.boards[BLACK].standing |
-				 state.boards[WHITE].standing) & BOARD) << 5) >> 5;
+    legal = nmask << index;
+    legal &= (~(state.boards[BLACK].standing |
+		state.boards[WHITE].standing) & BOARD) << 5;
+    legal = legal >> 5;
     if (!legal)
 	return (move_s) {.type = 'F'};
     
     do
 	dest = index + offset[generate(4)];
-    while (!(1 << dest & legal));
+    while (!(legal & 1 << dest));
+
+    res = (move_s) {.stones = 1 << index | 1 << dest, .type = 'm'};
+
+    if (state.player_board->standing & 1 << dest)
+	res.standing = res.stones;
+    if (state.player_board->capstone & 1 << dest)
+	res.capstone = res.stones;
     
-    return (move_s) {.from = index, .to = dest, .type = 'm'};
+    return res;
 }
 
 move_s pick_move(state_s state)
@@ -239,37 +249,21 @@ move_s pick_move(state_s state)
     return res;
 }
 
-board_s apply_move(board_s board, move_s move) {
+board_s apply_move(board_s board, move_s move)
+{
     board_s new_board = board;
-    
-    switch (move.type) {
-    case 'n':
-	new_board.stones |= move.to;
-	new_board.num_normal--;
-	break;
-    case 's':
-	new_board.stones |= move.to;
-	new_board.standing |= move.to;
-	new_board.num_normal--;
-	break;
-    case 'c':
-	new_board.stones |= move.to;
-	new_board.capstone |= move.to;
-	new_board.num_capstones--;
-	break;
-    case 'm':
-	new_board.stones ^= move.from;
-	new_board.stones |= move.to;
-	new_board.standing ^= board.standing & move.from;
-	new_board.standing |= board.standing & move.to;
-	new_board.capstone ^= board.capstone & move.from;
-	new_board.capstone |= board.capstone & move.to;
-    }
+
+    new_board.stones ^= move.stones;
+    new_board.standing ^= move.standing;
+    new_board.capstone ^= move.capstone;
+    new_board.num_normal -= move.less_normal;
+    new_board.num_capstones -= move.less_capstones;
 
     return new_board;
 }
 
-state_s step_move(state_s state, move_s move) {
+state_s step_move(state_s state, move_s move)
+{
     state_s new_state = state;
 
     *new_state.player_board = apply_move(*state.player_board, move);
@@ -280,7 +274,8 @@ state_s step_move(state_s state, move_s move) {
     return new_state;
 }
 
-char game_ended(state_s state) {
+char game_ended(state_s state)
+{
     /* Check for road win */
     if (evaluate_roads(state.boards[BLACK]))
 	return '-';
@@ -304,9 +299,29 @@ char game_ended(state_s state) {
     return 0;
 }
 
+int rollout(state_s state)
+{
+    char res;
+    
+    do {
+	move_s move;
+
+	move = pick_move(state);
+	state = step_move(state, move);
+    }
+    while ((res = !game_ended(state)));
+
+    return res;
+}
+
+int evaluate(state_s state)
+{
+    return 0;
+}
+
 int main()
 {
-    /* TODO: Implement stacks */
+    GNode *search_tree;
     board_s start = {
 	.num_normal = MAX_NORMAL,
 	.num_capstones = MAX_CAPSTONES
@@ -322,6 +337,9 @@ int main()
     game_state.player_board = &game_state.boards[game_state.player_to_move];
     game_state.player_board = &game_state.boards[!game_state.player_to_move];
 
+    /* Create the root of the search tree */
+    search_tree = g_node_new(NULL);
+
     /* TODO: Be careful of the first round */
     do {
 	move_s move;
@@ -334,6 +352,8 @@ int main()
 	       game_state.boards[WHITE].stones);
     }
     while (!game_ended(game_state));
+
+    g_node_destroy(search_tree);
 
     return 0;
 }
