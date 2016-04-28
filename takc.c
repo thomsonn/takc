@@ -78,6 +78,8 @@ typedef struct node_s {
     int num_win;
     int num_loss;
     int num_draw;
+    float total;
+    float eval;
 } node_s;
 
 unsigned int flip_vert(unsigned int x)
@@ -288,54 +290,45 @@ move_s pick_move(state_s state)
     return res;
 }
 
-board_s apply_move(board_s board, move_s move)
+void apply_move(board_s *board, move_s move)
 {
-    board_s new_board = board;
-
     assert(move.type == 'n' || move.type == 's' || move.less_normal == 0);
     assert(move.type == 'c' || move.less_capstones == 0);
+    assert(move.type != 'c' || board->num_capstones > 0);
 
-    assert(move.type != 'c' || board.num_capstones > 0);
-
-    new_board.stones ^= move.stones;
-    new_board.standing ^= move.standing;
-    new_board.capstone ^= move.capstone;
-    new_board.num_normal -= move.less_normal;
-    new_board.num_capstones -= move.less_capstones;
-
-    return new_board;
+    board->stones ^= move.stones;
+    board->standing ^= move.standing;
+    board->capstone ^= move.capstone;
+    board->num_normal -= move.less_normal;
+    board->num_capstones -= move.less_capstones;
 }
 
-state_s step_move(state_s state, move_s move)
+void step_move(state_s *state, move_s move)
 {
-    state_s new_state = state;
-
-    if (state.starting) {
+    if (state->starting) {
 	/* FIXME: I don't really understand this */
-	if (state.player_to_move == WHITE) {
-	    new_state.white = apply_move(state.white, move);
-	    new_state.player_to_move = BLACK;
+	if (state->player_to_move == WHITE) {
+	    apply_move(&state->white, move);
+	    state->player_to_move = BLACK;
 	}
 	else {
-	    new_state.black = apply_move(state.black, move);
-	    new_state.starting = 0;
+	    apply_move(&state->black, move);
+	    state->starting = 0;
 	}
 
-	return new_state;
+	return;
     }
     
-    if (state.player_to_move == BLACK)
-	new_state.black = apply_move(state.black, move);
+    if (state->player_to_move == BLACK)
+	apply_move(&state->black, move);
     else
-	new_state.white = apply_move(state.white, move);
-    new_state.player_to_move = !new_state.player_to_move;
+	apply_move(&state->white, move);
+    state->player_to_move = !state->player_to_move;
 
-    assert(new_state.black.num_normal >= 0);
-    assert(new_state.black.num_capstones >= 0);
-    assert(new_state.white.num_normal >= 0);
-    assert(new_state.white.num_capstones >= 0);
-
-    return new_state;
+    assert(state->black.num_normal >= 0);
+    assert(state->black.num_capstones >= 0);
+    assert(state->white.num_normal >= 0);
+    assert(state->white.num_capstones >= 0);
 }
 
 char game_ended(state_s state)
@@ -371,7 +364,7 @@ char rollout(state_s state)
 	move_s move;
 
 	move = pick_move(state);
-	state = step_move(state, move);
+	step_move(&state, move);
     }
 
     return res;
@@ -382,51 +375,38 @@ void step_evaluation(GNode *root, state_s state)
     GNode *node = root;
     GNode *child;
     node_s *data;
-    GArray *eval_array;
     char result;
     int add_win, add_loss, add_draw;
     state_s new_state = state;
 
-    eval_array = g_array_new(FALSE, FALSE, sizeof(float));
-
     /* Find a leaf */
     while (!G_NODE_IS_LEAF(node)) {
-	int ichild = 0;
-	int nchildren;
-	float total = 0;
 	float dice;
 
-	nchildren = g_node_n_children(root);
+	if (((node_s *) node->data)->num_win == 0)
+	    child = g_node_nth_child(node, generate(g_node_n_children(node)));
+	else {
+	    dice = generatef(((node_s *) node->data)->total);
 
-	for (int i = 0; i < nchildren; i++) {
-	    node_s *data;
-	    float eval;
-	
-	    data = (node_s *) g_node_nth_child(node, i)->data;
+	    for (unsigned int i = 0; i < g_node_n_children(node); i++) {
+		child = g_node_nth_child(node, i);
 
-	    eval = ((float) data->num_win)/((float) (data->num_win + data->num_loss + data->num_draw));
-	    g_array_append_val(eval_array, eval);
-	    total += eval;
+		data = (node_s *) node->data;
+		dice -= data->eval;
+		if (dice <= 0)
+		    break;
+	    }
 	}
 
-	dice = generatef(total);
-
-	do
-	    dice -= g_array_index(eval_array, float, ichild);
-	while (dice > 0);
-
-	node = g_node_nth_child(node, ichild);
-	data = (node_s *) node->data;
-	new_state = step_move(new_state, data->move);
+	node = child;
+	step_move(&new_state, ((node_s *) node->data)->move);
     }
-
-    g_array_free(eval_array, TRUE);
 
     if (!game_ended(new_state)) {
 	/* Add a new child */
 	data = calloc(1, sizeof(node_s));
 	data->move = pick_move(new_state);
-	new_state = step_move(new_state, data->move);
+	step_move(&new_state, data->move);
 
 	child = g_node_new(data);
 	node = g_node_insert(node, 0, child);
@@ -440,10 +420,15 @@ void step_evaluation(GNode *root, state_s state)
 
     /* Propagate back up the tree */
     while (!G_NODE_IS_ROOT(node)) {
+	float old_eval;
+
 	data = (node_s *) node->data;
 	data->num_win += add_win;
 	data->num_loss += add_loss;
 	data->num_draw += add_draw;
+	old_eval = data->eval;
+	data->eval = ((float) data->num_win)/((float) (data->num_win + data->num_loss + data->num_draw));
+	((node_s *) node->parent->data)->total += data->eval - old_eval;
 	node = node->parent;
     }
 }
@@ -553,7 +538,7 @@ int main()
 	
 	search_tree = make_move(search_tree, game_state);
 	data = (node_s *) search_tree->data;
-	game_state = step_move(game_state, data->move);
+	step_move(&game_state, data->move);
 
 	string = print_move(data->move);
 
