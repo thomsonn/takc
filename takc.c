@@ -317,7 +317,7 @@ int main()
     };
 
     /* Seed the random number generator */
-    srand(18571);
+    srand(4894);
     
     game_state.player_board = &game_state.boards[game_state.player_to_move];
     game_state.player_board = &game_state.boards[!game_state.player_to_move];

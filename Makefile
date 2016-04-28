@@ -1,8 +1,8 @@
-takc: main.c
-	gcc -Wall -Wextra -O1 -ggdb -lm -o takc main.c
+CFLAGS = `pkg-config --cflags glib-2.0` -ggdb -Wall -Wextra -O1
+LDADD = `pkg-config --libs glib-2.0`
+objects = takc.o
 
-all:
-	takc
+takc: $(objects)
 
 clean:
-	rm takc
+	rm -f takc
