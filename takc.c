@@ -76,8 +76,7 @@ typedef struct move_s {
 typedef struct node_s {
     move_s move;
     int player;
-    int wins_black;
-    int wins_white;
+    int wins;
     int total;
 } node_s;
 
@@ -124,9 +123,9 @@ int count_bits(unsigned int x)
 
     y = x - (x >> 1 & magic[0]);
     y = ((y >> 2) & magic[1]) + (y & magic[1]);
-    y = (y >>  4) + (y & magic[2]);
-    y = (y >>  8) + (y & magic[3]);
-    y = (y >> 16) + (y & magic[4]);
+    y = ((y >>  4) + y) & magic[2];
+    y = ((y >>  8) + y) & magic[3];
+    y = ((y >> 16) + y) & magic[4];
 
     return y;
 }
@@ -189,7 +188,7 @@ int evaluate_roads(board_s board) {
 int count_unoccupied(state_s state)
 {
     return count_bits(~(state.black.stones |
-			state.white.stones));
+			state.white.stones) & BOARD);
 }
 
 board_s player_board(state_s state)
@@ -347,14 +346,15 @@ char rollout(state_s state)
 
 void step_evaluation(GNode *root, state_s state)
 {
-    GNode *node = root;
+    GNode *node;
     GNode *child;
     node_s *data;
-    int player = state.player_to_move;
+    int player;
 
     /* Find a leaf */
-    while (!G_NODE_IS_LEAF(node)) {
-	GNode *best = NULL;
+    for (node = root; !G_NODE_IS_LEAF(node) &&
+	     g_node_n_children(node) >= count_unoccupied(state); node = child, step_move(&state, ((node_s *) node->data)->move)) {
+	GNode *best;
 	float max = 0;
 
 	for (unsigned int i = 0; i < g_node_n_children(node); i++) {
@@ -363,39 +363,53 @@ void step_evaluation(GNode *root, state_s state)
 	    child = g_node_nth_child(node, i);
 
 	    data = (node_s *) child->data;
-	    eval = ((float) *((int *) (((void *) &data->wins_black) + (data->player == WHITE)*sizeof(int))))/((float) data->total);
-	    eval += 1.4*sqrtf(log2f(((node_s *) node->data)->total)/((float) data->total));
-	    if (eval > max) {
+	    eval = ((float) data->wins)/((float) data->total);
+	    eval += 1.4*sqrtf(log2f((float) ((node_s *) node->data)->total)/((float) data->total));
+	    if (i == 0 || eval > max) {
 		max = eval;
 		best = child;
 	    }
 	}
-
-	node = best ? best : child;
-	step_move(&state, ((node_s *) node->data)->move);
     }
 
     if (!game_ended(state)) {
+	move_s move;
+	int try_again;
+	
 	/* Add a new child */
 	data = calloc(1, sizeof(node_s));
 	data->player = !((node_s *) node->data)->player;
-	data->move = pick_move(state);
+
+	do {
+	    move = pick_move(state);
+	    try_again = 0;
+
+	    for (unsigned int i = 0; i < g_node_n_children(node); i++) {
+		child = g_node_nth_child(node, i);
+
+		data = (node_s *) child->data;
+		if (!memcmp(&data->move, &move, sizeof(move_s)))
+		    try_again = 1;
+	    }
+	}
+	while (try_again);
+
+	data->move = move;
 	step_move(&state, data->move);
 
 	child = g_node_new(data);
 	node = g_node_insert(node, 0, child);
     }
 
+    player = data->player;
+
     /* Rollout the position */
     char result = rollout(state);
-    int add_wins_white = result == '+';
-    int add_wins_black = result == '-';
 
     /* Propagate back up the tree */
     while (!G_NODE_IS_ROOT(node)) {
 	data = (node_s *) node->data;
-	data->wins_black += add_wins_black;
-	data->wins_white += add_wins_white;
+	data->wins += (data->player == player)*(player ? result == '-' : result == '+');
 	data->total++;
 	node = node->parent;
     }
@@ -406,8 +420,9 @@ GNode *evaluate(GNode *root, state_s state)
     GNode *node;
     GNode *res = NULL;
     float max = 0;
+    int player = state.player_to_move;
 
-    for (int i = 0; i < 100000; i++)
+    for (int i = 0; i < 20000; i++)
 	step_evaluation(root, state);
 
     for (unsigned int i = 0; i < g_node_n_children(root); i++) {
@@ -417,12 +432,10 @@ GNode *evaluate(GNode *root, state_s state)
 	node = g_node_nth_child(root, i);
 	data = (node_s *) node->data;
 	
-	/* If there are no winning moves, play out to the end anyway */
-	if (i == 0)
-	    res = node;
+	assert(player == data->player);
 
-	eval = ((float) !data->player ? data->wins_white : data->wins_black)/((float) data->total);
-	if (eval > max) {
+	eval = ((float) data->wins)/((float) data->total);
+	if (i == 0 || eval > max) {
 	    max = eval;
 	    res = node;
 	}
@@ -438,7 +451,7 @@ GNode *make_move(GNode *root, state_s state)
     
     best = evaluate(root, state);
     data = (node_s *) root->data;
-    printf("{n: %8u, w: %8u, t: %8u, p: %d} ", g_node_n_nodes(root, G_TRAVERSE_ALL), data->player ? data->wins_white : data->wins_black, data->total, data->player);
+    printf("{n: %8u, w: %8u, t: %8u, p: %d} ", g_node_n_nodes(root, G_TRAVERSE_ALL), data->wins, data->total, data->player);
     g_node_unlink(best);
 
     free(root->data);
@@ -465,8 +478,7 @@ char *print_move(move_s move)
     asprintf(&string, "%s%c", string, '1' + row);
 
     if (move.type == 'm') {
-	int board;
-	int n;
+	int board, n;
 
 	board = move.stones ^ 1 << move.index;
 	n = log2l(move.index >= 5 ? board >> (move.index - 5) : board << (5 - move.index));
@@ -493,11 +505,12 @@ int main()
     int ply = 0;
 
     /* Seed the random number generator */
-    srand(4894);
+    //srand(4894);
+    srand(18062);
 
     /* Create the root of the search tree */
     data = calloc(1, sizeof(node_s));
-    data->player = WHITE;
+    data->player = BLACK;
     search_tree = g_node_new(data);
 
     printf("[Size \"5\"]\n\n");
