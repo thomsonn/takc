@@ -145,7 +145,7 @@ float generatef(float x)
 int connect_vert(uint32_t x)
 {
     uint32_t v12, v54, h24, h33;
-    
+
     v12 = x << 1 & ROW2;
     v54 = x >> 1 & ROW4;
 
@@ -167,7 +167,7 @@ int connect_vert(uint32_t x)
     h33 |= h33 >> SIZE & x;
     h33 |= h33 >> SIZE & x;
     h33 |= h33 >> SIZE & x;
-	                 
+
     h33 |= h33 << SIZE & x;
     h33 |= h33 << SIZE & x;
     h33 |= h33 << SIZE & x;
@@ -241,7 +241,7 @@ move_s move_stone(state_s state, int index)
     */
     if (!legal)
 	return (move_s) {.type = 'F'};
-    
+
     do
 	dest = index + offset[generate(4)];
     while (!(legal & 1 << dest));
@@ -252,7 +252,7 @@ move_s move_stone(state_s state, int index)
 	res.standing = res.stones;
     if (player_board(state).capstone & 1 << index)
 	res.capstone = res.stones;
-    
+
     return res;
 }
 
@@ -333,7 +333,7 @@ char game_ended(state_s state)
 char rollout(state_s state)
 {
     char res;
-    
+
     while (!(res = game_ended(state))) {
 	move_s move;
 
@@ -344,61 +344,68 @@ char rollout(state_s state)
     return res;
 }
 
+int select_ucb1(GNode *node)
+{
+    int best;
+    float max = 0;
+
+    for (int i = 0; i < (int) g_node_n_children(node); i++) {
+	node_s *data;
+	float eval;
+
+	data = (node_s *) g_node_nth_child(node, i)->data;
+	eval = ((float) data->wins)/((float) data->total);
+	eval += 1.4*sqrtf(log2f((float) ((node_s *) node->data)->total)/((float) data->total));
+	if (i == 0 || eval > max) {
+	    max = eval;
+	    best = i;
+	}
+    }
+
+    return best;
+}
+
+int select_random(GNode *node)
+{
+    return generate(g_node_n_children(node));
+}
+
 void step_evaluation(GNode *root, state_s state)
 {
     GNode *node;
-    GNode *child;
     node_s *data;
     int player;
 
     /* Find a leaf */
-    for (node = root; !G_NODE_IS_LEAF(node) &&
-	     g_node_n_children(node) >= count_unoccupied(state); node = child, step_move(&state, ((node_s *) node->data)->move)) {
-	GNode *best;
-	float max = 0;
-
-	for (unsigned int i = 0; i < g_node_n_children(node); i++) {
-	    float eval;
-
-	    child = g_node_nth_child(node, i);
-
-	    data = (node_s *) child->data;
-	    eval = ((float) data->wins)/((float) data->total);
-	    eval += 1.4*sqrtf(log2f((float) ((node_s *) node->data)->total)/((float) data->total));
-	    if (i == 0 || eval > max) {
-		max = eval;
-		best = child;
-	    }
-	}
+    for (node = root; !G_NODE_IS_LEAF(node); step_move(&state, data->move)) {
+	if ((int) g_node_n_children(node) >= count_unoccupied(state))
+	    break;
+	node = g_node_nth_child(node, select_ucb1(node));
+	data = (node_s *) node->data;
     }
 
     if (!game_ended(state)) {
 	move_s move;
-	int try_again;
-	
+
 	/* Add a new child */
 	data = calloc(1, sizeof(node_s));
 	data->player = !((node_s *) node->data)->player;
 
 	do {
 	    move = pick_move(state);
-	    try_again = 0;
 
-	    for (unsigned int i = 0; i < g_node_n_children(node); i++) {
-		child = g_node_nth_child(node, i);
-
-		data = (node_s *) child->data;
+	    for (int i = 0; i < (int) g_node_n_children(node); i++) {
+		data = (node_s *) g_node_nth_child(node, i)->data;
 		if (!memcmp(&data->move, &move, sizeof(move_s)))
-		    try_again = 1;
+		    move.type = 'F';
 	    }
 	}
-	while (try_again);
+	while (move.type == 'F');
 
 	data->move = move;
 	step_move(&state, data->move);
 
-	child = g_node_new(data);
-	node = g_node_insert(node, 0, child);
+	node = g_node_insert(node, 0, g_node_new(data));
     }
 
     player = data->player;
@@ -409,7 +416,7 @@ void step_evaluation(GNode *root, state_s state)
     /* Propagate back up the tree */
     while (!G_NODE_IS_ROOT(node)) {
 	data = (node_s *) node->data;
-	data->wins += (data->player == player)*(player ? result == '-' : result == '+');
+	data->wins += (data->player == player)*(player ? result == '+' : result == '-');
 	data->total++;
 	node = node->parent;
     }
@@ -420,19 +427,16 @@ GNode *evaluate(GNode *root, state_s state)
     GNode *node;
     GNode *res = NULL;
     float max = 0;
-    int player = state.player_to_move;
 
     for (int i = 0; i < 20000; i++)
 	step_evaluation(root, state);
 
-    for (unsigned int i = 0; i < g_node_n_children(root); i++) {
+    for (int i = 0; i < (int) g_node_n_children(root); i++) {
 	node_s *data;
 	float eval;
 
 	node = g_node_nth_child(root, i);
 	data = (node_s *) node->data;
-	
-	assert(player == data->player);
 
 	eval = ((float) data->wins)/((float) data->total);
 	if (i == 0 || eval > max) {
@@ -448,7 +452,7 @@ GNode *make_move(GNode *root, state_s state)
 {
     GNode *best;
     node_s *data;
-    
+
     best = evaluate(root, state);
     data = (node_s *) root->data;
     printf("{n: %8u, w: %8u, t: %8u, p: %d} ", g_node_n_nodes(root, G_TRAVERSE_ALL), data->wins, data->total, data->player);
@@ -462,7 +466,7 @@ GNode *make_move(GNode *root, state_s state)
 
 char *print_move(move_s move)
 {
-    const char direction[] = {'<', '!', '!', '!', '+', '!', '-', '!', '!', '!', '>'};
+    const char direction[] = {'<', 0, 0, 0, '+', 0, '-', 0, 0, 0, '>'};
     char *string = "";
     char *mstr = "";
     int row, col;
@@ -509,7 +513,8 @@ int main()
 
     /* Seed the random number generator */
     //srand(4894);
-    srand(18062);
+    //srand(18062);
+    srand(time(NULL));
 
     /* Create the root of the search tree */
     data = calloc(1, sizeof(node_s));
@@ -524,7 +529,7 @@ int main()
 
 	if (ply % 2 == 0)
 	    printf("%d. %s", ply/2 + 1, ply/2 + 1 < 10 ? " " : "");
-	
+
 	search_tree = make_move(search_tree, game_state);
 	data = (node_s *) search_tree->data;
 	step_move(&game_state, data->move);
