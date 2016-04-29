@@ -464,26 +464,29 @@ char *print_move(move_s move)
 {
     const char direction[] = {'<', '!', '!', '!', '+', '!', '-', '!', '!', '!', '>'};
     char *string = "";
+    char *mstr = "";
     int row, col;
 
     col = move.index/5;
     row = 4 - move.index % 5;
 
     if (move.type == 'c')
-	asprintf(&string, "C");
+	string = "C";
     if (move.type == 's')
-	asprintf(&string, "S");
-
-    asprintf(&string, "%s%c", string, 'a' + col);
-    asprintf(&string, "%s%c", string, '1' + row);
+	string = "S";
 
     if (move.type == 'm') {
 	int board, n;
 
 	board = move.stones ^ 1 << move.index;
 	n = log2l(move.index >= 5 ? board >> (move.index - 5) : board << (5 - move.index));
-	asprintf(&string, "%s%c", string, direction[n]);
+	asprintf(&mstr, "%c", direction[n]);
     }
+
+    asprintf(&string, "%s%c%c%s", string, 'a' + col, '1' + row, mstr);
+
+    if (move.type == 'm')
+	free(mstr);
 
     return string;
 }
@@ -542,6 +545,9 @@ int main()
 	ply++;
     }
     while (!game_ended(game_state));
+
+    free(search_tree->data);
+    g_node_destroy(search_tree);
 
     printf("\n\nB: %u\nW: %u\n",
 	   game_state.black.stones,
