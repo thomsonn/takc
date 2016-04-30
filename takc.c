@@ -76,8 +76,8 @@ typedef struct move_s {
 typedef struct node_s {
     move_s move;
     int player;
-    int wins;
-    int total;
+    double wins;
+    double total;
 } node_s;
 
 unsigned int flip_vert(unsigned int x)
@@ -204,10 +204,10 @@ board_s opponent_board(state_s state)
 move_s place_stone(state_s state, int index)
 {
     /* TODO: Use a policy */
-    switch (generate(9 + (player_board(state).num_capstones > 0))) {
-    case 19:
+    switch (generate(6 + (player_board(state).num_capstones > 0))) {
+    case 6:
 	return (move_s) {.stones = 1 << index, .standing = 1 << index, .less_normal = 1, .type = 's'};
-    case 20:
+    case 7:
 	return (move_s) {.stones = 1 << index, .capstone = 1 << index, .less_capstones = 1, .type = 'c'};
     default:
 	return (move_s) {.stones = 1 << index, .less_normal = 1, .type = 'n'};
@@ -232,13 +232,13 @@ move_s move_stone(state_s state, int index)
 	legal &= UMASK;
     legal &= ~(state.black.stones |
 	       state.white.stones) & BOARD;
-    /*
+    //
     legal &= ~(state.black.capstone |
 	       state.white.capstone) & BOARD;
       if (!(player_board(state).capstone & 1 << index))
       legal &= ~(state.black.standing |
       state.white.standing) & BOARD;
-    */
+    // */
     if (!legal)
 	return (move_s) {.type = 'F'};
 
@@ -271,10 +271,8 @@ move_s pick_move(state_s state)
 		res = (move_s) {.type = 'F'};
 	}
 	else {
-	    if (1 << index & player_board(state).stones) {
+	    if (1 << index & player_board(state).stones)
 		res = move_stone(state, index);
-		res = (move_s) {.type = 'F'};
-	    }
 	    else if (1 << index & (~(state.black.stones | state.white.stones) & BOARD) &&
 		     player_board(state).num_normal > 0)
 		res = place_stone(state, index);
@@ -319,6 +317,8 @@ char game_ended(state_s state)
 	int nblack = count_bits(state.black.stones & ~state.black.standing);
 	int nwhite = count_bits(state.white.stones & ~state.white.standing);
 
+	return '=';
+
 	if (nblack == nwhite)
 	    return '=';
 	if (nblack > nwhite)
@@ -347,15 +347,15 @@ char rollout(state_s state)
 int select_ucb1(GNode *node)
 {
     int best;
-    float max = 0;
+    double max = 0;
 
     for (int i = 0; i < (int) g_node_n_children(node); i++) {
 	node_s *data;
-	float eval;
+	double eval;
 
 	data = (node_s *) g_node_nth_child(node, i)->data;
-	eval = ((float) data->wins)/((float) data->total);
-	eval += 1.4*sqrtf(log2f((float) ((node_s *) node->data)->total)/((float) data->total));
+	eval = data->wins/data->total;
+	eval += 1.4*sqrt(log(((node_s *) node->data)->total)/data->total);
 	if (i == 0 || eval > max) {
 	    max = eval;
 	    best = i;
@@ -378,7 +378,7 @@ void step_evaluation(GNode *root, state_s state)
 
     /* Find a leaf */
     for (node = root; !G_NODE_IS_LEAF(node); step_move(&state, data->move)) {
-	if ((int) g_node_n_children(node) >= count_unoccupied(state))
+	if ((int) g_node_n_children(node) < count_unoccupied(state))
 	    break;
 	node = g_node_nth_child(node, select_ucb1(node));
 	data = (node_s *) node->data;
@@ -395,8 +395,10 @@ void step_evaluation(GNode *root, state_s state)
 	    move = pick_move(state);
 
 	    for (int i = 0; i < (int) g_node_n_children(node); i++) {
-		data = (node_s *) g_node_nth_child(node, i)->data;
-		if (!memcmp(&data->move, &move, sizeof(move_s)))
+		node_s *d;
+
+		d = (node_s *) g_node_nth_child(node, i)->data;
+		if (memcmp(&d->move, &move, sizeof(move_s)) == 0)
 		    move.type = 'F';
 	    }
 	}
@@ -405,7 +407,7 @@ void step_evaluation(GNode *root, state_s state)
 	data->move = move;
 	step_move(&state, data->move);
 
-	node = g_node_insert(node, 0, g_node_new(data));
+	node = g_node_append(node, g_node_new(data));
     }
 
     player = data->player;
@@ -414,11 +416,11 @@ void step_evaluation(GNode *root, state_s state)
     char result = rollout(state);
 
     /* Propagate back up the tree */
-    while (!G_NODE_IS_ROOT(node)) {
+    for (; node; node = node->parent) {
 	data = (node_s *) node->data;
 	data->wins += (data->player == player)*(player ? result == '+' : result == '-');
-	data->total++;
-	node = node->parent;
+	data->wins += 0.5*((double) (result == '='));
+	data->total += 1.0;
     }
 }
 
@@ -426,19 +428,19 @@ GNode *evaluate(GNode *root, state_s state)
 {
     GNode *node;
     GNode *res = NULL;
-    float max = 0;
+    double max = 0;
 
-    for (int i = 0; i < 20000; i++)
+    for (int i = 0; i < 100000; i++)
 	step_evaluation(root, state);
 
     for (int i = 0; i < (int) g_node_n_children(root); i++) {
 	node_s *data;
-	float eval;
+	double eval;
 
 	node = g_node_nth_child(root, i);
 	data = (node_s *) node->data;
 
-	eval = ((float) data->wins)/((float) data->total);
+	eval = data->wins/data->total;
 	if (i == 0 || eval > max) {
 	    max = eval;
 	    res = node;
@@ -446,22 +448,6 @@ GNode *evaluate(GNode *root, state_s state)
     }
 
     return res;
-}
-
-GNode *make_move(GNode *root, state_s state)
-{
-    GNode *best;
-    node_s *data;
-
-    best = evaluate(root, state);
-    data = (node_s *) root->data;
-    printf("{n: %8u, w: %8u, t: %8u, p: %d} ", g_node_n_nodes(root, G_TRAVERSE_ALL), data->wins, data->total, data->player);
-    g_node_unlink(best);
-
-    free(root->data);
-    g_node_destroy(root);
-
-    return best;
 }
 
 char *print_move(move_s move)
@@ -493,6 +479,52 @@ char *print_move(move_s move)
 	free(mstr);
 
     return string;
+}
+
+void print_best(GNode *node)
+{
+    node_s *data;
+
+    data = (node_s *) node->data;
+    printf("{n: %8u, w: %9.1f, t: %9.1f, w/t: %5.3f} ", g_node_n_nodes(node, G_TRAVERSE_ALL), data->wins, data->total, data->wins/data->total);
+}
+
+void print_all(GNode *root)
+{
+    GNode *node;
+
+    printf("{");
+
+    for (int i = 0; i < (int) g_node_n_children(root); i++) {
+	node_s *data;
+	char *string;
+
+	node = g_node_nth_child(root, i);
+	data = (node_s *) node->data;
+
+	string = print_move(data->move);
+	printf("%sm: %s, n: %8u, w: %9.1f, t: %9.1f, w/t: %5.3f", i == 0 ? "" : "\n; ", string, g_node_n_nodes(node, G_TRAVERSE_ALL), data->wins, data->total, data->wins/data->total);
+	free(string);
+    }
+
+    printf("} ");
+}
+
+GNode *make_move(GNode *root, state_s state)
+{
+    GNode *best;
+
+    best = evaluate(root, state);
+
+    //print_all(root);
+    print_best(best);
+
+    g_node_unlink(best);
+
+    free(root->data);
+    g_node_destroy(root);
+
+    return best;
 }
 
 int main()
@@ -554,6 +586,7 @@ int main()
     free(search_tree->data);
     g_node_destroy(search_tree);
 
+    /*
     printf("\n\nB: %u\nW: %u\n",
 	   game_state.black.stones,
 	   game_state.white.stones);
@@ -561,6 +594,7 @@ int main()
     printf("\n\nBr: %u\nWr: %u\n",
 	   game_state.black.stones ^ game_state.black.standing,
 	   game_state.white.stones ^ game_state.white.standing);
+    */
 
     return 0;
 }
