@@ -80,7 +80,7 @@ typedef struct node_s {
     double total;
 } node_s;
 
-unsigned int flip_vert(unsigned int x)
+uint32_t flip_vert(uint32_t x)
 {
     return ((x >> 4) & ROW1) |
 	   ((x >> 2) & ROW2) |
@@ -89,7 +89,7 @@ unsigned int flip_vert(unsigned int x)
 	   ((x << 4) & ROW5);
 }
 
-unsigned int flip_horz(unsigned int x)
+uint32_t flip_horz(uint32_t x)
 {
     return ((x >> 20) & COL1) |
 	   ((x >> 10) & COL2) |
@@ -98,7 +98,7 @@ unsigned int flip_horz(unsigned int x)
 	   ((x << 20) & COL5);
 }
 
-unsigned int flip_diag(unsigned int x)
+uint32_t flip_diag(uint32_t x)
 {
     return ((x >> 16) & 0x0000010) |
 	   ((x >> 12) & 0x0000208) |
@@ -111,15 +111,15 @@ unsigned int flip_diag(unsigned int x)
       	   ((x << 16) & 0x0100000);
 }
 
-unsigned int rotate(unsigned int board)
+uint32_t rotate(uint32_t board)
 {
     return flip_horz(flip_diag(board));
 }
 
-int count_bits(unsigned int x)
+int count_bits(uint32_t x)
 {
-    const unsigned int magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
-    unsigned int y;
+    const uint32_t magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
+    uint32_t y;
 
     y = x - (x >> 1 & magic[0]);
     y = ((y >> 2) & magic[1]) + (y & magic[1]);
@@ -142,77 +142,50 @@ float generatef(float x)
     return ((float) rand())/((float) (RAND_MAX/x));
 }
 
-int connect_vert(uint32_t x)
-{
-    uint32_t v12, v54, h24, h33;
-
-    v12 = x << 1 & ROW2;
-    v54 = x >> 1 & ROW4;
-
-    h24 = (v12 | v54) & x;
-
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-
-    h33 = h24 << 1 & ROW3 & x;
-
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-
-    return (h33 & h24 >> 1 & ROW3) != 0;
-}
-
-int connect_rows(uint32_t x, uint32_t y)
+int connect_cols(uint32_t x, uint32_t y)
 {
     uint32_t result = 0;
-
-    x &= y;
 
     while (y != 0) {
 	uint32_t w, r, s;
 
+	/* x = 0b0100100100100010 */
+	/* y = 0b0111111000001100 */
+	/* Isolate the lowest 1 bit in y */
 	s = y & -y;
+	/* s = 0b0000000000000100 */
 	r = y + s;
+	/* r = 0b0111111000010000 */
+	/* Isolate the lowest consecutive group of 1s in y */
 	w = y ^ r ^ (r & -r);
+	/* w = 0b0000000000001100 */
 	if ((x & w) != 0)
 	    result |= w;
+	/* Unset w from y */
 	y ^= w;
+	/* y = 0b0111111000000000 */
     }
 
     return result;
 }
 
-int connect_vert2(uint32_t x)
+int connect_horz(uint32_t x)
 {
-    uint32_t result = x & ROW1;
+    uint32_t cols1254;
+    uint32_t cols23;
 
-    result = connect_rows(result >> 1, x & ROW2);
-    result = connect_rows(result >> 1, x & ROW3);
-    result = connect_rows(result >> 1, x & ROW4);
-    result = connect_rows(result >> 1, x & ROW5);
+    /* Connect roads from column 1 to 2 and from column 5 to 4, in parallel */
+    cols1254 = connect_cols((x << SIZE & COL2) | (x >> SIZE & COL4), (x & COL2) | (x & COL4));
+    /* Connect roads from column 2 to 3 */
+    cols23 = connect_cols(cols1254 << SIZE, x & COL3);
 
-    return result != 0;
+    /* Return the bitwise AND of columns 3 and 4 */
+    return (cols23 << SIZE & cols1254) != 0;
 }
 
 int connect(uint32_t x)
 {
-    assert((connect_vert2(x) || connect_vert2(rotate(x)))
-	   == (connect_vert(x) || connect_vert(rotate(x))));
-    return connect_vert2(x) || connect_vert2(rotate(x));
+    return connect_horz(x) || connect_horz(rotate(x));
 }
 
 int evaluate_roads(board_s board) {
