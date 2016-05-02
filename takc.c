@@ -176,9 +176,43 @@ int connect_vert(uint32_t x)
     return (h33 & h24 >> 1 & ROW3) != 0;
 }
 
+int connect_rows(uint32_t x, uint32_t y)
+{
+    uint32_t result = 0;
+
+    x &= y;
+
+    while (y != 0) {
+	uint32_t w, r, s;
+
+	s = y & -y;
+	r = y + s;
+	w = y ^ r ^ (r & -r);
+	if ((x & w) != 0)
+	    result |= w;
+	y ^= w;
+    }
+
+    return result;
+}
+
+int connect_vert2(uint32_t x)
+{
+    uint32_t result = x & ROW1;
+
+    result = connect_rows(result >> 1, x & ROW2);
+    result = connect_rows(result >> 1, x & ROW3);
+    result = connect_rows(result >> 1, x & ROW4);
+    result = connect_rows(result >> 1, x & ROW5);
+
+    return result != 0;
+}
+
 int connect(uint32_t x)
 {
-    return connect_vert(x) || connect_vert(rotate(x));
+    assert((connect_vert2(x) || connect_vert2(rotate(x)))
+	   == (connect_vert(x) || connect_vert(rotate(x))));
+    return connect_vert2(x) || connect_vert2(rotate(x));
 }
 
 int evaluate_roads(board_s board) {
