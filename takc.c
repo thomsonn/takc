@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 #include "bitboard.h"
+#include "fastlog.h"
 #include "globals.h"
 
 #define MAX_STACK 7
@@ -251,7 +252,7 @@ int select_ucb1(GNode *node)
 
 	data = (node_s *) g_node_nth_child(node, i)->data;
 	eval = data->wins/data->total;
-	eval += 1.4*sqrt(log(((node_s *) node->data)->total)/data->total);
+	eval += 1.4*sqrt(fastlog2(((node_s *) node->data)->total)/data->total);
 	if (i == 0 || eval > max) {
 	    max = eval;
 	    best = i;
@@ -356,6 +357,8 @@ char *print_move(move_s move)
     col = move.index/5;
     row = 4 - move.index % 5;
 
+    if (move.type == 'n')
+	string = " ";
     if (move.type == 'c')
 	string = "C";
     if (move.type == 's')
@@ -451,7 +454,6 @@ int main()
 
     printf("[Size \"5\"]\n\n");
 
-    /* TODO: Be careful of the first round */
     do {
 	char *string;
 
