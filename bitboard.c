@@ -43,7 +43,7 @@ uint32_t bitboard_rotate(uint32_t x)
     return bitboard_flip_diag(bitboard_flip_horz(x));
 }
 
-static int connect_cols(uint32_t x, uint32_t y)
+static uint32_t connect_cols(uint32_t x, uint32_t y)
 {
     uint32_t result = 0;
 
@@ -108,7 +108,7 @@ int bitboard_popcount(uint32_t x)
 
 #define PASTE(a, b, c, d, e, f) a ## b ## c ## d ## e ## f
 
-void test_flip_horz()
+static void test_flip_horz()
 {
     g_assert(bitboard_flip_horz(PASTE(0b, 11100, 00100, 00111, 00000, 00000)) ==
                         	PASTE(0b, 00000, 00000, 00111, 00100, 11100));
@@ -116,7 +116,7 @@ void test_flip_horz()
                  	        PASTE(0b, 00001, 00011, 00010, 00110, 00100));
 }
 
-void test_flip_vert()
+static void test_flip_vert()
 {
     g_assert(bitboard_flip_vert(PASTE(0b, 10000, 11110, 00010, 00010, 00010)) ==
 	                        PASTE(0b, 00001, 01111, 01000, 01000, 01000));
@@ -124,7 +124,7 @@ void test_flip_vert()
 	                        PASTE(0b, 10000, 11000, 01000, 01100, 00100));
 }
 
-void test_flip_diag()
+static void test_flip_diag()
 {
     g_assert(bitboard_flip_diag(PASTE(0b, 00001, 00001, 00011, 01110, 01000)) ==
 	                        PASTE(0b, 00000, 00011, 00010, 00110, 11100));
@@ -132,7 +132,7 @@ void test_flip_diag()
 	                        PASTE(0b, 00100, 11100, 10000, 10000, 10000));
 }
 
-void test_rotate()
+static void test_rotate()
 {
     g_assert(bitboard_rotate(PASTE(0b, 00000, 01110, 01010, 11011, 00000)) ==
 	                     PASTE(0b, 01000, 01110, 00010, 01110, 01000));
@@ -140,7 +140,7 @@ void test_rotate()
 	                     PASTE(0b, 00000, 00000, 00111, 01100, 11000));
 }
 
-void test_connect()
+static void test_connect()
 {
     g_assert( bitboard_connect(PASTE(0b, 00100, 11110, 01100, 11111, 11111)));
     g_assert( bitboard_connect(PASTE(0b, 00111, 00101, 10100, 10101, 01111)));
@@ -149,7 +149,7 @@ void test_connect()
     g_assert(!bitboard_connect(PASTE(0b, 00010, 01110, 11101, 10010, 00111)));
 }
 
-void test_popcount()
+static void test_popcount()
 {
     g_assert(bitboard_popcount(PASTE(0b, 00100, 01100, 11000, 10000, 10000)) == 7);
     g_assert(bitboard_popcount(PASTE(0b, 00000, 00000, 00011, 11110, 00000)) == 6);

@@ -10,5 +10,11 @@ takc: $(objects)
 bitboard: CFLAGS += -DTEST_BITBOARD
 bitboard: bitboard.o
 
+.PHONY: test
+test: clean bitboard
+	./bitboard
+	make clean
+
+.PHONY: clean
 clean:
 	rm -f takc $(objects)
