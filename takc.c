@@ -67,10 +67,10 @@ typedef struct node_s {
 } node_s;
 
 typedef struct config_s {
-    double ucb1_c;
     double place_normal;
     double place_standing;
     double place_capstone;
+    double ucb1_exploration;
 } config_s;
 
 int generate(int n)
@@ -254,7 +254,7 @@ int select_ucb1(GNode *node)
     double max = 0;
     double log_total;
 
-    log_total = log(((node_s *) node->data)->total);
+    log_total = fastlog2(((node_s *) node->data)->total);
 
     for (int i = 0; i < (int) g_node_n_children(node); i++) {
 	node_s *data;
@@ -262,7 +262,7 @@ int select_ucb1(GNode *node)
 
 	data = (node_s *) g_node_nth_child(node, i)->data;
 	eval = data->wins/data->total;
-	eval += 1.4*sqrt(fastlog2(((node_s *) node->data)->total)/data->total);
+	eval += 1.7*sqrt(log_total/data->total);
 	if (i == 0 || eval > max) {
 	    max = eval;
 	    best = i;
@@ -456,21 +456,34 @@ char *string_from_file(const char *filename)
     return out;
 }
 
-int parse_config(config_s *out, const char *string)
-{
-    char *scratch = NULL;
-    char *txt;
-
-    while ((txt = strtok_r(string, "\n", &scratch))) {
-    }
-}
+#define get_double(x, group, key) do {					\
+	value = g_key_file_get_double(key_file, group, key, &error);	\
+	config->x = value == 0 ? config->x : value;			\
+    }									\
+    while(0)
 
 int read_config(config_s *config, const char *filename)
 {
-    int done = 0;
-    char *string;
+    GKeyFile *key_file;
+    GError *error = NULL;
+    double value;
 
-    return config;
+    key_file = g_key_file_new();
+
+    if (!g_key_file_load_from_file(key_file, filename, G_KEY_FILE_NONE, &error)) {
+	fprintf(stderr, "failed to open file '%s'.\n", filename);
+	return 1;
+    }
+
+    get_double(place_normal, "Place", "normal");
+    get_double(place_standing, "Place", "standing");
+    get_double(place_capstone, "Place", "capstone");
+
+    get_double(ucb1_exploration, "MCTS", "ucb1_exploration");
+
+    g_key_file_free(key_file);
+
+    return 0;
 }
 
 int main()
@@ -487,7 +500,12 @@ int main()
 	.starting = 1
     };
     node_s *data;
-    config_s config;
+    config_s config = {
+	.place_normal = 0.5,
+	.place_standing = 0.3,
+	.place_capstone = 0.2,
+	.ucb1_exploration = 1.7
+    };
     int ply = 0;
 
     /* Seed the random number generator */
@@ -495,9 +513,8 @@ int main()
     srand(18062);
     //srand(time(NULL));
 
-    config = read_configs("default.conf");
-
-    printf("ucb1_c: %f\n", config.ucb1_c);
+    /* Read configuration */
+    read_config(&config, "default.conf");
 
     /* Create the root of the search tree */
     data = calloc(1, sizeof(node_s));
