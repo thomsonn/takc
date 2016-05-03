@@ -5,9 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "globals.h"
 #include "bitboard.h"
 #include "fastlog.h"
-#include "globals.h"
+#include "move.h"
+#include "tree.h"
+
+#define MAX_SEARCH 10000
 
 #define MAX_STACK 7
 
@@ -48,23 +52,6 @@ typedef struct state_s {
     int player_to_move;
     int starting;
 } state_s;
-
-typedef struct move_s {
-    int index;
-    uint32_t stones;
-    uint32_t standing;
-    uint32_t capstone;
-    int less_normal;
-    int less_capstones;
-    char type;
-} move_s;
-
-typedef struct node_s {
-    move_s move;
-    int player;
-    double wins;
-    double total;
-} node_s;
 
 typedef struct config_s {
     double place_normal;
@@ -552,16 +539,6 @@ int main()
 
     free(search_tree->data);
     g_node_destroy(search_tree);
-
-    /*
-    printf("\n\nB: %u\nW: %u\n",
-	   game_state.black.stones,
-	   game_state.white.stones);
-
-    printf("\n\nBr: %u\nWr: %u\n",
-	   game_state.black.stones ^ game_state.black.standing,
-	   game_state.white.stones ^ game_state.white.standing);
-    */
 
     return 0;
 }

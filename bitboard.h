@@ -22,11 +22,11 @@
 #define BITBOARD_COL4 0x00f8000
 #define BITBOARD_COL5 0x1f00000
 
-uint32_t bitboard_flip_horz(uint32_t x);
-uint32_t bitboard_flip_vert(uint32_t x);
-uint32_t bitboard_flip_diag(uint32_t x);
-uint32_t bitboard_rotate(uint32_t x);
-int bitboard_connect(uint32_t x);
-int bitboard_popcount(uint32_t x);
+uint32_t bitboard_flip_horz(uint32_t);
+uint32_t bitboard_flip_vert(uint32_t);
+uint32_t bitboard_flip_diag(uint32_t);
+uint32_t bitboard_rotate(uint32_t);
+int bitboard_connect(uint32_t);
+int bitboard_popcount(uint32_t);
 
 #endif /*_BITBOARD_H_ */
