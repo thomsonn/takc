@@ -66,6 +66,13 @@ typedef struct node_s {
     double total;
 } node_s;
 
+typedef struct config_s {
+    double ucb1_c;
+    double place_normal;
+    double place_standing;
+    double place_capstone;
+} config_s;
+
 int generate(int n)
 {
     /* FIXME: Dumb random numbers */
@@ -245,6 +252,9 @@ int select_ucb1(GNode *node)
 {
     int best;
     double max = 0;
+    double log_total;
+
+    log_total = log(((node_s *) node->data)->total);
 
     for (int i = 0; i < (int) g_node_n_children(node); i++) {
 	node_s *data;
@@ -416,7 +426,7 @@ GNode *make_move(GNode *root, state_s state)
     best = evaluate(root, state);
 
     //print_all(root);
-    print_best(best);
+    //print_best(best);
 
     g_node_unlink(best);
 
@@ -424,6 +434,43 @@ GNode *make_move(GNode *root, state_s state)
     g_node_destroy(root);
 
     return best;
+}
+
+char *string_from_file(const char *filename)
+{
+    char *out;
+    GIOChannel *file;
+    GError *error = NULL;
+
+    file = g_io_channel_new_file(filename, "r", &error);
+    if (!file) {
+	fprintf(stderr, "failed to open file '%s'.\n", filename);
+	return NULL;
+    }
+
+    if (g_io_channel_read_to_end(file, &out, NULL, &error) != G_IO_STATUS_NORMAL) {
+	fprintf(stderr, "found file '%s' but couldn't read it in.\n", filename);
+	return NULL;
+    }
+
+    return out;
+}
+
+int parse_config(config_s *out, const char *string)
+{
+    char *scratch = NULL;
+    char *txt;
+
+    while ((txt = strtok_r(string, "\n", &scratch))) {
+    }
+}
+
+int read_config(config_s *config, const char *filename)
+{
+    int done = 0;
+    char *string;
+
+    return config;
 }
 
 int main()
@@ -440,12 +487,17 @@ int main()
 	.starting = 1
     };
     node_s *data;
+    config_s config;
     int ply = 0;
 
     /* Seed the random number generator */
     //srand(4894);
-    //srand(18062);
-    srand(time(NULL));
+    srand(18062);
+    //srand(time(NULL));
+
+    config = read_configs("default.conf");
+
+    printf("ucb1_c: %f\n", config.ucb1_c);
 
     /* Create the root of the search tree */
     data = calloc(1, sizeof(node_s));
