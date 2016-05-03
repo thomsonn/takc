@@ -1,39 +1,46 @@
 #include "bitboard.h"
 
-uint32_t bitboard_flip_vert(uint32_t x)
-{
-    return ((x >> 20) & BITBOARD_COL1) |
-	   ((x >> 10) & BITBOARD_COL2) |
-      	    (x        & BITBOARD_COL3) |
-	   ((x << 10) & BITBOARD_COL4) |
-	   ((x << 20) & BITBOARD_COL5);
-}
-
 uint32_t bitboard_flip_horz(uint32_t x)
 {
-    return ((x >> 4) & BITBOARD_ROW1) |
-	   ((x >> 2) & BITBOARD_ROW2) |
-	    (x       & BITBOARD_ROW3) |
-	   ((x << 2) & BITBOARD_ROW4) |
-	   ((x << 4) & BITBOARD_ROW5);
+    uint32_t y;
+
+    y = (x ^ x >> 20) & 0x000001f;
+    x ^= y ^ y << 20;
+    y = (x ^ x >> 10) & 0x00003e0;
+    x ^= y ^ y << 10;
+
+    return x;
+}
+
+uint32_t bitboard_flip_vert(uint32_t x)
+{
+    uint32_t y;
+
+    y = (x ^ x >> 4) & 0x0108421;
+    x ^= y ^ y << 4;
+    y = (x ^ x >> 2) & 0x0210842;
+    x ^= y ^ y << 2;
+
+    return x;
 }
 
 uint32_t bitboard_flip_diag(uint32_t x)
 {
-    return ((x >> 16) & 0x0000010) |
-	   ((x >> 12) & 0x0000208) |
-	   ((x >> 8)  & 0x0004104) |
-           ((x >> 4)  & 0x0082082) |
-	    (x        & 0x1041041) |
-	   ((x << 4)  & 0x0820820) |
-	   ((x << 8)  & 0x0410400) |
-	   ((x << 12) & 0x0208000) |
-      	   ((x << 16) & 0x0100000);
+    uint32_t y;
+
+    y = (x ^ x >> 12) & 0x0000318;
+    x ^= y ^ y << 12;
+    y = (x ^ x >> 8) & 0x0004004;
+    x ^= y ^ y << 8;
+    y = (x ^ x >> 4) & 0x0092092;
+    x ^= y ^ y << 4;
+
+    return x;
 }
 
 uint32_t bitboard_rotate(uint32_t x)
 {
-    return bitboard_flip_horz(bitboard_flip_diag(x));
+    return bitboard_flip_diag(bitboard_flip_horz(x));
 }
 
 int bitboard_connect_vert(uint32_t x)
@@ -93,9 +100,9 @@ int bitboard_popcount(uint32_t x)
 
 #define PASTE(a, b, c, d, e, f) a ## b ## c ## d ## e ## f
 
-void test_flip_vert()
+void test_flip_horz()
 {
-    g_assert(bitboard_flip_vert(PASTE(0b,
+    g_assert(bitboard_flip_horz(PASTE(0b,
 				      10110,
 				      10001,
 				      11011,
@@ -107,7 +114,7 @@ void test_flip_vert()
 		   11011,
 		   10001,
 		   10110));
-    g_assert(bitboard_flip_vert(PASTE(0b,
+    g_assert(bitboard_flip_horz(PASTE(0b,
 				      11001,
 				      10011,
 				      10111,
@@ -121,9 +128,9 @@ void test_flip_vert()
 		   11001));
 }
 
-void test_flip_horz()
+void test_flip_vert()
 {
-    g_assert(bitboard_flip_horz(PASTE(0b,
+    g_assert(bitboard_flip_vert(PASTE(0b,
 				      10110,
 				      10001,
 				      11100,
@@ -135,7 +142,7 @@ void test_flip_horz()
 		   00111,
 		   11000,
 		   01110));
-    g_assert(bitboard_flip_horz(PASTE(0b,
+    g_assert(bitboard_flip_vert(PASTE(0b,
 				      00001,
 				      10011,
 				      10101,
@@ -259,8 +266,8 @@ int main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
 
-    g_test_add_func("/bitboard/flip_vert", test_flip_vert);
     g_test_add_func("/bitboard/flip_horz", test_flip_horz);
+    g_test_add_func("/bitboard/flip_vert", test_flip_vert);
     g_test_add_func("/bitboard/flip_diag", test_flip_diag);
     g_test_add_func("/bitboard/rotate", test_rotate);
     g_test_add_func("/bitboard/connect", test_connect);
