@@ -1,6 +1,7 @@
 #ifndef _BITBOARD_H_
 #define _BITBOARD_H_
 
+#include <glib.h>
 #include <stdint.h>
 
 #include "globals.h"

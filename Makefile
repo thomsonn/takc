@@ -7,5 +7,8 @@ objects = takc.o bitboard.o
 
 takc: $(objects)
 
+bitboard: CFLAGS += -DTEST_BITBOARD
+bitboard: bitboard.o
+
 clean:
 	rm -f takc $(objects)

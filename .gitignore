@@ -1,3 +1,4 @@
+*.o
 takc
-takc.o
+bitboard
 perf.data*
