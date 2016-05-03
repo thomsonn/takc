@@ -3,7 +3,7 @@ CFLAGS += -ggdb -Wall -Wextra
 CFLAGS += -Ofast -fomit-frame-pointer -march=native
 #CFLAGS += -O0 -fno-omit-frame-pointer
 LDLIBS = `pkg-config --libs glib-2.0` -lm
-objects = takc.o
+objects = takc.o bitboard.o
 
 takc: $(objects)
 

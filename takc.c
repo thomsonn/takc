@@ -5,28 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_STACK 7
+#include "bitboard.h"
+#include "globals.h"
 
-const int SIZE = 5;
+#define MAX_STACK 7
 
 const int MAX_NORMAL = 21;
 const int MAX_CAPSTONES = 1;
-
-const uint32_t BOARD = 0x1ffffff;
-const uint32_t DMASK = 0x1ef7bde;
-const uint32_t UMASK = 0x0f7bdef;
-
-const uint32_t ROW1 = 0x0108421;
-const uint32_t ROW2 = 0x0210842;
-const uint32_t ROW3 = 0x0421084;
-const uint32_t ROW4 = 0x0842108;
-const uint32_t ROW5 = 0x1084210;
-
-const uint32_t COL1 = 0x000001f;
-const uint32_t COL2 = 0x00003e0;
-const uint32_t COL3 = 0x0007c00;
-const uint32_t COL4 = 0x00f8000;
-const uint32_t COL5 = 0x1f00000;
 
 typedef enum colour {
     BLACK = 0,
@@ -80,56 +65,6 @@ typedef struct node_s {
     double total;
 } node_s;
 
-unsigned int flip_vert(unsigned int x)
-{
-    return ((x >> 4) & ROW1) |
-	   ((x >> 2) & ROW2) |
-	    (x       & ROW3) |
-	   ((x << 2) & ROW4) |
-	   ((x << 4) & ROW5);
-}
-
-unsigned int flip_horz(unsigned int x)
-{
-    return ((x >> 20) & COL1) |
-	   ((x >> 10) & COL2) |
-      	    (x        & COL3) |
-	   ((x << 10) & COL4) |
-	   ((x << 20) & COL5);
-}
-
-unsigned int flip_diag(unsigned int x)
-{
-    return ((x >> 16) & 0x0000010) |
-	   ((x >> 12) & 0x0000208) |
-	   ((x >> 8)  & 0x0004104) |
-           ((x >> 4)  & 0x0082082) |
-	    (x        & 0x1041041) |
-	   ((x << 4)  & 0x0820820) |
-	   ((x << 8)  & 0x0410400) |
-	   ((x << 12) & 0x0208000) |
-      	   ((x << 16) & 0x0100000);
-}
-
-unsigned int rotate(unsigned int board)
-{
-    return flip_horz(flip_diag(board));
-}
-
-int count_bits(unsigned int x)
-{
-    const unsigned int magic[] = {0x1555555, 0x1333333, 0x10f0f0f, 0x0ff00ff, 0x000ffff};
-    unsigned int y;
-
-    y = x - (x >> 1 & magic[0]);
-    y = ((y >> 2) & magic[1]) + (y & magic[1]);
-    y = ((y >>  4) + y) & magic[2];
-    y = ((y >>  8) + y) & magic[3];
-    y = ((y >> 16) + y) & magic[4];
-
-    return y;
-}
-
 int generate(int n)
 {
     /* FIXME: Dumb random numbers */
@@ -142,53 +77,14 @@ float generatef(float x)
     return ((float) rand())/((float) (RAND_MAX/x));
 }
 
-int connect_vert(uint32_t x)
-{
-    uint32_t v12, v54, h24, h33;
-
-    v12 = x << 1 & ROW2;
-    v54 = x >> 1 & ROW4;
-
-    h24 = (v12 | v54) & x;
-
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-
-    h33 = h24 << 1 & ROW3 & x;
-
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-
-    return (h33 & h24 >> 1 & ROW3) != 0;
-}
-
-int connect(uint32_t x)
-{
-    return connect_vert(x) || connect_vert(rotate(x));
-}
-
 int evaluate_roads(board_s board) {
-    return connect(board.stones ^ board.standing);
+    return bitboard_connect(board.stones ^ board.standing);
 }
 
 int count_unoccupied(state_s state)
 {
-    return count_bits(~(state.black.stones |
-			state.white.stones) & BOARD);
+    return bitboard_popcount(~(state.black.stones |
+			       state.white.stones) & BOARD);
 }
 
 board_s player_board(state_s state)
@@ -314,8 +210,8 @@ char game_ended(state_s state)
     /* Check for flat win */
     if ((state.black.stones | state.white.stones) == BOARD ||
 	(state.black.num_normal == 0 && state.white.num_normal == 0)) {
-	int nblack = count_bits(state.black.stones & ~state.black.standing);
-	int nwhite = count_bits(state.white.stones & ~state.white.standing);
+	int nblack = bitboard_popcount(state.black.stones & ~state.black.standing);
+	int nwhite = bitboard_popcount(state.white.stones & ~state.white.standing);
 
 	return '=';
 
