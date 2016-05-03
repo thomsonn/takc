@@ -61,7 +61,7 @@ typedef struct move_s {
 typedef struct node_s {
     move_s move;
     int player;
-p    double wins;
+    double wins;
     double total;
 } node_s;
 

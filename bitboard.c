@@ -43,43 +43,51 @@ uint32_t bitboard_rotate(uint32_t x)
     return bitboard_flip_diag(bitboard_flip_horz(x));
 }
 
-int bitboard_connect_vert(uint32_t x)
+static int connect_cols(uint32_t x, uint32_t y)
 {
-    uint32_t v12, v54, h24, h33;
+    uint32_t result = 0;
 
-    v12 = x << 1 & BITBOARD_ROW2;
-    v54 = x >> 1 & BITBOARD_ROW4;
+    while (y != 0) {
+	uint32_t w, r, s;
 
-    h24 = (v12 | v54) & x;
+	/* x = 0b0100100100100010 */
+	/* y = 0b0111111000001100 */
+	/* Isolate the lowest 1 bit in y */
+	s = y & -y;
+	/* s = 0b0000000000000100 */
+	r = y + s;
+	/* r = 0b0111111000010000 */
+	/* Isolate the lowest consecutive group of 1s in y */
+	w = y ^ r ^ (r & -r);
+	/* w = 0b0000000000001100 */
+	if ((x & w) != 0)
+	    result |= w;
+	/* Unset w from y */
+	y ^= w;
+	/* y = 0b0111111000000000 */
+    }
 
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
-    h24 |= h24 << SIZE & x;
+    return result;
+}
 
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
-    h24 |= h24 >> SIZE & x;
+static int connect_horz(uint32_t x)
+{
+    uint32_t cols1254;
+    uint32_t cols23;
 
-    h33 = h24 << 1 & BITBOARD_ROW3 & x;
+    /* Connect roads from column 1 to 2 and from column 5 to 4, in parallel */
+    cols1254 = connect_cols((x << SIZE & BITBOARD_COL2) | (x >> SIZE & BITBOARD_COL4),
+			    (x & BITBOARD_COL2) | (x & BITBOARD_COL4));
+    /* Connect roads from column 2 to 3 */
+    cols23 = connect_cols(cols1254 << SIZE, x & BITBOARD_COL3);
 
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-    h33 |= h33 >> SIZE & x;
-
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-    h33 |= h33 << SIZE & x;
-
-    return (h33 & h24 >> 1 & BITBOARD_ROW3) != 0;
+    /* Return the bitwise AND of columns 3 and 4 */
+    return (cols23 << SIZE & cols1254) != 0;
 }
 
 int bitboard_connect(uint32_t x)
 {
-    return bitboard_connect_vert(x) || bitboard_connect_vert(bitboard_rotate(x));
+    return connect_horz(x) || connect_horz(bitboard_rotate(x));
 }
 
 int bitboard_popcount(uint32_t x)

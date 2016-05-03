@@ -26,7 +26,6 @@ uint32_t bitboard_flip_horz(uint32_t x);
 uint32_t bitboard_flip_vert(uint32_t x);
 uint32_t bitboard_flip_diag(uint32_t x);
 uint32_t bitboard_rotate(uint32_t x);
-int bitboard_connect_vert(uint32_t x);
 int bitboard_connect(uint32_t x);
 int bitboard_popcount(uint32_t x);
 
