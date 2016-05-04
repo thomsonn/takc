@@ -10,9 +10,14 @@ takc: $(objects)
 bitboard: CFLAGS += -DTEST_BITBOARD
 bitboard: bitboard.o
 
+tree: CFLAGS += -DTEST_TREE
+tree: tree.o fastlog.o
+
 .PHONY: test
-test: clean bitboard
+test: clean bitboard tree
 	./bitboard
+	make clean
+	./tree
 	make clean
 
 .PHONY: clean

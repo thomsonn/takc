@@ -1,4 +1,5 @@
 *.o
 takc
 bitboard
+tree
 perf.data*

@@ -301,7 +301,7 @@ void step_evaluation(GNode *root, state_s state)
 	data->move = move;
 	step_move(&state, data->move);
 
-	node = g_node_append(node, g_node_new(data));
+	node = g_node_prepend(node, g_node_new(data));
     }
 
     player = data->player;

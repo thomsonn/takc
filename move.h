@@ -1,6 +1,8 @@
 #ifndef _MOVE_H_
 #define _MOVE_H_
 
+#include <stdint.h>
+
 typedef struct move_s {
     int index;
     uint32_t stones;

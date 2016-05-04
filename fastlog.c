@@ -1,6 +1,6 @@
-#include "fastlog.h"
-
 #include <stdint.h>
+
+#include "fastlog.h"
 
 float fastlog2(float x)
 {

@@ -106,6 +106,8 @@ int bitboard_popcount(uint32_t x)
 
 #ifdef TEST_BITBOARD
 
+#include <glib.h>
+
 #define PASTE(a, b, c, d, e, f) a ## b ## c ## d ## e ## f
 
 static void test_flip_horz()
