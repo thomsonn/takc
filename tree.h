@@ -21,7 +21,7 @@ typedef struct tree_s {
     node_s *free;
 } tree_s;
 
-void tree_new(tree_s *, int);
+tree_s *tree_new(int);
 void tree_destroy(tree_s *, node_s *);
 node_s *tree_prepend(tree_s *, node_s *, move_s);
 int tree_n_children(node_s *);

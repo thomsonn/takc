@@ -235,24 +235,18 @@ char rollout(state_s state)
     return res;
 }
 
-int select_ucb1(GNode *node)
+node_s *select_ucb1(node_s *node)
 {
-    int best;
+    node_s *best;
     double max = 0;
-    double log_total;
+    double log_total = fastlog2(node->total);
 
-    log_total = fastlog2(((node_s *) node->data)->total);
+    for (node_s *child = node->child; child; child = child->sibling) {
+	double eval = child->wins/child->total + 1.7*sqrt(log_total/child->total);
 
-    for (int i = 0; i < (int) g_node_n_children(node); i++) {
-	node_s *data;
-	double eval;
-
-	data = (node_s *) g_node_nth_child(node, i)->data;
-	eval = data->wins/data->total;
-	eval += 1.7*sqrt(log_total/data->total);
-	if (i == 0 || eval > max) {
+	if (eval > max) {
 	    max = eval;
-	    best = i;
+	    best = child;
 	}
     }
 
@@ -261,87 +255,70 @@ int select_ucb1(GNode *node)
 
 int select_random(GNode *node)
 {
-    return generate(g_node_n_children(node));
+    return generate(tree_n_children(node));
 }
 
-void step_evaluation(GNode *root, state_s state)
+void step_evaluation(tree_s *tree, state_s state)
 {
-    GNode *node;
-    node_s *data;
-    int player;
+    node_s *node;
 
     /* Find a leaf */
-    for (node = root; !G_NODE_IS_LEAF(node); step_move(&state, data->move)) {
-	if ((int) g_node_n_children(node) < count_unoccupied(state))
+    for (node = tree->root; node->child; step_move(&state, node->move)) {
+	if (tree_n_children(node) < count_unoccupied(state))
 	    break;
-	node = g_node_nth_child(node, select_ucb1(node));
-	data = (node_s *) node->data;
+	node = select_ucb1(node);
     }
 
     if (!game_ended(state)) {
 	move_s move;
 
-	/* Add a new child */
-	data = calloc(1, sizeof(node_s));
-	data->player = !((node_s *) node->data)->player;
-
 	do {
 	    move = pick_move(state);
 
-	    for (int i = 0; i < (int) g_node_n_children(node); i++) {
-		node_s *d;
-
-		d = (node_s *) g_node_nth_child(node, i)->data;
+	    for (node_s *child = node->child; child; child = child->sibling)
 		if (memcmp(&d->move, &move, sizeof(move_s)) == 0)
 		    move.type = 'F';
-	    }
 	}
 	while (move.type == 'F');
 
-	data->move = move;
-	step_move(&state, data->move);
-
-	node = g_node_prepend(node, g_node_new(data));
+	node = tree_prepend(tree, node, move);
+	step_move(&state, move);
     }
 
-    player = data->player;
+    int player = state.player_to_move;
 
     /* Rollout the position */
     char result = rollout(state);
 
     /* Propagate back up the tree */
     for (; node; node = node->parent) {
-	data = (node_s *) node->data;
-	data->wins += (data->player == player)*(player ? result == '+' : result == '-');
-	data->wins += 0.5*((double) (result == '='));
-	data->total += 1.0;
+	node->wins += (player == state.player_to_move)*
+	    (state.player_to_move ? result == '+' : result == '-');
+	node->wins += 0.5*((double) (result == '='));
+	node->total += 1.0;
+	player = !player;
     }
 }
 
-GNode *evaluate(GNode *root, state_s state)
+node_s *evaluate(tree_s *tree, state_s state)
 {
-    GNode *node;
-    GNode *res = NULL;
+    node_s *best;
     double max = 0;
 
     for (int i = 0; i < 100000; i++)
-	step_evaluation(root, state);
+	step_evaluation(tree, state);
 
-    for (int i = 0; i < (int) g_node_n_children(root); i++) {
-	node_s *data;
-	double eval;
+    best = tree->root->child;
+    for (node_s *child = tree->root->child; child; child = child->sibling) {
+	double eval = data->wins/data->total;
 
-	node = g_node_nth_child(root, i);
-	data = (node_s *) node->data;
-
-	eval = data->wins/data->total;
-	if (i == 0 || eval > max) {
+	if (eval > max) {
 	    max = eval;
-	    res = node;
+	    best = child;
 	}
     }
 
-    return res;
+    return best;
 }
 
 char *print_move(move_s move)
@@ -377,48 +354,35 @@ char *print_move(move_s move)
     return string;
 }
 
-void print_best(GNode *node)
+void print_best(node_s *node)
 {
-    node_s *data;
-
-    data = (node_s *) node->data;
-    printf("{n: %8u, w: %9.1f, t: %9.1f, w/t: %5.3f} ", g_node_n_nodes(node, G_TRAVERSE_ALL), data->wins, data->total, data->wins/data->total);
+    printf("{w: %9.1f, t: %9.1f, w/t: %5.3f} ", node->wins, node->total, node->wins/node->total);
 }
 
-void print_all(GNode *root)
+void print_all(node_s *root)
 {
-    GNode *node;
-
     printf("{");
 
-    for (int i = 0; i < (int) g_node_n_children(root); i++) {
-	node_s *data;
-	char *string;
+    for (node_s *child = root->child; child; child = child->sibling) {
+	char *string = print_move(data->move);
 
-	node = g_node_nth_child(root, i);
-	data = (node_s *) node->data;
-
-	string = print_move(data->move);
-	printf("%sm: %s, n: %8u, w: %9.1f, t: %9.1f, w/t: %5.3f", i == 0 ? "" : "\n; ", string, g_node_n_nodes(node, G_TRAVERSE_ALL), data->wins, data->total, data->wins/data->total);
+	printf("%sm: %s, w: %9.1f, t: %9.1f, w/t: %5.3f", i == 0 ? "" : "\n; ", string, child->wins, child->total, child->wins/child->total);
 	free(string);
     }
 
     printf("} ");
 }
 
-GNode *make_move(GNode *root, state_s state)
+GNode *make_move(tree_s *tree, state_s state)
 {
-    GNode *best;
+    node_s *best;
 
-    best = evaluate(root, state);
+    best = evaluate(tree, state);
 
     //print_all(root);
     //print_best(best);
 
-    g_node_unlink(best);
-
-    free(root->data);
-    g_node_destroy(root);
+    tree_unlink(best);
 
     return best;
 }

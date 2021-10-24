@@ -5,10 +5,12 @@
 #include "fastlog.h"
 #include "tree.h"
 
-void tree_new(tree_s *tree, int size)
+tree_s *tree_new(int size)
 {
+    tree_s *tree;
     node_s *root;
 
+    tree = malloc(sizeof(tree_s));
     root = malloc(size*sizeof(node_s));
 
     tree->first = root;
@@ -30,6 +32,8 @@ void tree_new(tree_s *tree, int size)
 	node->sibling = tree->free;
 	tree->free = node;
     }
+
+    return tree;
 }
 
 void tree_destroy(tree_s *tree, node_s *node)
@@ -92,6 +96,8 @@ node_s *tree_prepend(tree_s *tree, node_s *node, move_s move)
     node_s *new;
 
     if (!tree->free)
+	/* FIXME: Maintain some minimum breadth at each level,
+	   need to do a backtracking search on worst branches */
 	tree_destroy(tree, select_ucb1_worst(tree->root));
 
     /* Failure is not an option */
@@ -150,7 +156,7 @@ void tree_unlink(tree_s *tree, node_s *node)
     }
 
     if (--parent->refcount == 0) {
-	/* Prepend to the free list */
+ 	/* Prepend to the free list */
 	parent->sibling = tree->free;
 	tree->free = parent;
     }
@@ -170,16 +176,25 @@ typedef struct tree_fixture_s {
 
 static void tree_setup(tree_fixture_s *fixture, gconstpointer test_data)
 {
-    tree_new(fixture->tree, TEST_SIZE);
+    fixture->tree = tree_new(TEST_SIZE);
 }
 
 static void tree_teardown(tree_fixture_s *fixture, gconstpointer test_data)
 {
     free(fixture->tree->first);
+    free(fixture->tree);
 }
 
-static void test_new()
+static void test_new(tree_fixture_s *fixture, gconstpointer test_data)
 {
+    tree_s *tree = fixture->tree;
+
+    for (int i = 0; i < TEST_SIZE; i++) {
+	node_s *node;
+
+	node = &tree->first[i];
+	g_assert(node->refcount == 0);
+    }
 }
 
 int main(int argc, char *argv[])
