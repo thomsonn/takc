@@ -16,10 +16,8 @@ tree: tree.o fastlog.o
 .PHONY: test
 test: clean bitboard tree
 	./bitboard
-	make clean
 	./tree
-	make clean
 
 .PHONY: clean
 clean:
-	rm -f takc $(objects)
+	rm -f takc bitboard tree *.o
